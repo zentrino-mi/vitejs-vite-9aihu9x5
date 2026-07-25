@@ -535,6 +535,10 @@ export default function App() {
 
   const myOwnAbsences = absences.filter(a => a.user_id === session?.user?.id);
 
+  // NEU: Berechnet wie viele Benutzer noch nicht verifiziert sind
+  const pendingRequests = allProfiles.filter(p => !p.is_approved && !p.is_admin);
+  const pendingCount = pendingRequests.length;
+
   if (isLoading) {
     return (
       <div className="min-h-[100dvh] w-full m-0 p-0 bg-gray-950 text-gray-100 flex items-center justify-center font-sans">
@@ -567,6 +571,11 @@ export default function App() {
                   <span className={`h-0.5 w-4 bg-gray-200 rounded transition-transform duration-300 ${isMenuOpen ? 'rotate-45 translate-y-1' : ''}`}></span>
                   <span className={`h-0.5 w-4 bg-gray-200 rounded transition-opacity duration-300 ${isMenuOpen ? 'opacity-0' : ''}`}></span>
                   <span className={`h-0.5 w-4 bg-gray-200 rounded transition-transform duration-300 ${isMenuOpen ? '-rotate-45 -translate-y-1' : ''}`}></span>
+                  
+                  {/* NEU: Roter Benachrichtigungs-Punkt am Menü wenn jemand wartet */}
+                  {myProfile.is_admin && pendingCount > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-bold h-5 w-5 rounded-full flex items-center justify-center shadow-[0_0_10px_rgba(239,68,68,0.6)] animate-pulse">{pendingCount}</span>
+                  )}
                 </button>
               )}
             </div>
@@ -578,7 +587,14 @@ export default function App() {
               <button onClick={() => navigateTo('songs')} className={`text-2xl font-bold ${currentView === 'songs' ? 'text-amber-500' : 'text-gray-500'}`}>🎵 Songs & Tabs</button>
               <button onClick={() => navigateTo('kalender')} className={`text-2xl font-bold ${currentView === 'kalender' ? 'text-amber-500' : 'text-gray-500'}`}>🌴 Kalender / Urlaub</button>
               <button onClick={() => navigateTo('bandkasse')} className={`text-2xl font-bold ${currentView === 'bandkasse' ? 'text-amber-500' : 'text-gray-500'}`}>💰 Bandkasse</button>
-              {myProfile.is_admin && <button onClick={() => navigateTo('verwaltung')} className={`text-2xl font-bold ${currentView === 'verwaltung' ? 'text-amber-500' : 'text-gray-500'}`}>🛡️ Verwaltung</button>}
+              
+              {/* NEU: Notification im Menü bei Verwaltung */}
+              {myProfile.is_admin && (
+                <button onClick={() => navigateTo('verwaltung')} className={`text-2xl font-bold flex items-center gap-3 ${currentView === 'verwaltung' ? 'text-amber-500' : 'text-gray-500'}`}>
+                  🛡️ Verwaltung
+                  {pendingCount > 0 && <span className="bg-red-500 text-white text-sm px-2.5 py-0.5 rounded-full shadow-lg">{pendingCount} Neu</span>}
+                </button>
+              )}
             </div>
           )}
 
@@ -1088,7 +1104,11 @@ export default function App() {
 
           {currentView === 'verwaltung' && myProfile.is_admin && (
             <div className="bg-gray-900/60 border border-gray-800 p-6 rounded-2xl shadow-sm">
-              <h2 className="text-lg font-bold text-amber-500 mb-4">🛡️ Admin-Zentrale</h2>
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-lg font-bold text-amber-500">🛡️ Admin-Zentrale</h2>
+                {pendingCount > 0 && <span className="bg-red-500 text-white text-[12px] font-bold px-3 py-1 rounded-full animate-pulse">{pendingCount} neue Anfragen</span>}
+              </div>
+              
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse text-sm">
                   <thead>
@@ -1102,17 +1122,22 @@ export default function App() {
                   <tbody className="divide-y divide-gray-800/40">
                     {allProfiles.map((p) => {
                       const isMe = p.id === session.user.id;
+                      const isPending = !p.is_approved && !p.is_admin;
+                      
                       return (
-                        <tr key={p.id} className={isMe ? "bg-amber-500/[0.02]" : ""}>
-                          <td className="py-4 font-medium">
-                            {p.full_name} {isMe && <span className="text-[10px] bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded ml-1 font-bold">Du</span>}
+                        // NEU: Unbestätigte Accounts werden mit einem roten Balken und leichtem Hintergrund hervorgehoben
+                        <tr key={p.id} className={`${isPending ? 'bg-red-500/[0.05] border-l-2 border-red-500' : isMe ? 'bg-amber-500/[0.02]' : ''}`}>
+                          <td className="py-4 pl-3 font-medium">
+                            {p.full_name} 
+                            {isMe && <span className="text-[10px] bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded ml-2 font-bold">Du</span>}
+                            {isPending && <span className="text-[10px] bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded ml-2 font-bold uppercase tracking-wider">Wartet</span>}
                           </td>
                           <td className="py-4">🎵 {p.instrument || 'Nicht zugewiesen'}</td>
                           <td className="py-4">
                             {p.is_admin ? (
                               <span className="text-[12px] px-2 py-1 rounded-md border bg-purple-500/10 text-purple-400 border-purple-500/30 font-bold">👑 Haupt-Admin</span>
                             ) : (
-                              <button onClick={() => togglePermission(p.id, 'can_manage_events', p.can_manage_events)} className={`text-[12px] px-2 py-1 rounded-md border ${p.can_manage_events ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' : 'bg-transparent text-gray-400 border-gray-800'}`}>
+                              <button onClick={() => togglePermission(p.id, 'can_manage_events', p.can_manage_events)} className={`text-[12px] px-2 py-1 rounded-md border transition-colors ${p.can_manage_events ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20' : 'bg-transparent text-gray-400 border-gray-800 hover:border-gray-600'}`}>
                                 {p.can_manage_events ? '🟢 Admin (Events)' : '🔴 Standard'}
                               </button>
                             )}
@@ -1121,8 +1146,9 @@ export default function App() {
                             {isMe || p.is_admin ? (
                               <span className="text-[12px] px-2.5 py-1.5 text-emerald-400 font-bold bg-emerald-500/10 rounded-lg border border-emerald-500/20">Aktiv</span>
                             ) : (
-                              <button onClick={() => toggleApprove(p.id, p.is_approved)} className={`text-[12px] px-2.5 py-1.5 rounded-lg border transition-colors ${p.is_approved ? 'bg-red-500/10 text-red-400 border-red-500/20 hover:bg-red-500/20' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'}`}>
-                                {p.is_approved ? 'Sperren' : 'Freischalten'}
+                              // NEU: Der Bestätigen Button leuchtet grün für wartende Accounts
+                              <button onClick={() => toggleApprove(p.id, p.is_approved)} className={`text-[12px] px-2.5 py-1.5 rounded-lg border transition-all ${p.is_approved ? 'bg-red-500/10 text-red-400 border-red-500/20 hover:bg-red-500/20' : 'bg-emerald-500 hover:bg-emerald-600 text-gray-950 font-black border-transparent shadow-[0_0_15px_rgba(16,185,129,0.4)] animate-pulse'}`}>
+                                {p.is_approved ? 'Sperren' : '✓ Verifizieren'}
                               </button>
                             )}
                           </td>
@@ -1187,7 +1213,7 @@ export default function App() {
         <form onSubmit={handleSubmit} className="space-y-4">
           {isRegister && (
             <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="block text-[12px] text-gray-400 uppercase mb-1">Vorname</label>
                   <input type="text" value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="Max" className="w-full bg-gray-950 border border-gray-800 rounded-xl px-4 py-3 text-[16px] text-white focus:outline-none focus:border-amber-500" required />
