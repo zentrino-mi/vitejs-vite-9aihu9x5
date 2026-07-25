@@ -72,8 +72,8 @@ export default function App() {
   const [eventType, setEventType] = useState<'Probe' | 'Auftritt' | 'Band-Event'>('Probe');
   
   // Setlist Upload States
-  const [eventSetlistImage, setEventSetlistImage] = useState(''); // Für die Vorschau oder existierende URL
-  const [setlistFile, setSetlistFile] = useState<File | null>(null); // Die echte Datei für den Upload
+  const [eventSetlistImage, setEventSetlistImage] = useState(''); 
+  const [setlistFile, setSetlistFile] = useState<File | null>(null); 
 
   // Instrumente-Verwaltung States
   const [instruments, setInstruments] = useState<string[]>(['Drums', 'Bass', 'Lead Gitarre', 'Gesang', 'Piano']);
@@ -191,10 +191,10 @@ export default function App() {
   const handleSetlistImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      setSetlistFile(file); // Datei für den Upload merken
+      setSetlistFile(file); 
       const reader = new FileReader();
       reader.onloadend = () => {
-        setEventSetlistImage(reader.result as string); // Nur für die sofortige Vorschau
+        setEventSetlistImage(reader.result as string); 
       };
       reader.readAsDataURL(file);
     }
@@ -322,7 +322,6 @@ export default function App() {
 
     let finalImageUrl = eventSetlistImage;
 
-    // Falls ein neues Setlist-Bild ausgewählt wurde, lade es in Supabase Storage hoch
     if (setlistFile && eventType === 'Auftritt') {
       const fileExt = setlistFile.name.split('.').pop();
       const fileName = `${Date.now()}_${Math.random()}.${fileExt}`;
@@ -538,7 +537,7 @@ export default function App() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gray-950 text-gray-100 flex items-center justify-center font-sans">
+      <div className="min-h-[100dvh] w-full m-0 p-0 bg-gray-950 text-gray-100 flex items-center justify-center font-sans">
         <div className="flex flex-col items-center gap-3">
           <div className="h-10 w-10 border-4 border-amber-500 border-t-transparent rounded-full animate-spin"></div>
           <p className="text-xs text-gray-400 font-bold tracking-wider uppercase animate-pulse">Lade Band-Portal...</p>
@@ -553,8 +552,8 @@ export default function App() {
 
   if (session && myProfile) {
     return (
-      <div className="min-h-screen bg-gray-950 text-gray-100 p-4 sm:p-6 font-sans relative overflow-x-hidden selection:bg-amber-500 selection:text-black">
-        <div className="max-w-4xl mx-auto">
+      <div className="min-h-[100dvh] w-full bg-gray-950 text-gray-100 font-sans relative overflow-x-hidden selection:bg-amber-500 selection:text-black m-0 p-0">
+        <div className="max-w-4xl mx-auto p-4 sm:p-6">
           
           <div className="flex justify-between items-center border-b border-gray-900 pb-4 mb-6">
             <div>
@@ -583,15 +582,16 @@ export default function App() {
             </div>
           )}
 
+          {/* Alle Modals/Popups sind jetzt begrenzt mit max-w-[95vw] und max-h-[90dvh] */}
           {selectedSetlistImage && (
             <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center p-4">
-              <div className="bg-gray-900 border border-gray-800 w-full max-w-3xl rounded-2xl p-4 shadow-2xl space-y-4 flex flex-col max-h-[90vh]">
-                <div className="flex justify-between items-center border-b border-gray-800 pb-3">
+              <div className="bg-gray-900 border border-gray-800 w-full max-w-3xl max-h-[90dvh] max-w-[95vw] rounded-2xl p-4 shadow-2xl flex flex-col overflow-hidden">
+                <div className="flex justify-between items-center border-b border-gray-800 pb-3 mb-4">
                   <h3 className="text-sm font-bold text-white uppercase tracking-wider">📜 Setlist Vorschau</h3>
                   <button onClick={() => setSelectedSetlistImage(null)} className="p-1 bg-gray-950 border border-gray-800 rounded-lg text-xs font-bold px-3 py-1.5 text-gray-400 hover:text-white">Schließen</button>
                 </div>
-                <div className="overflow-auto flex-1 flex items-center justify-center">
-                  <img src={selectedSetlistImage} alt="Setlist" className="max-w-full max-h-[70vh] object-contain rounded-xl border border-gray-800 shadow-inner" />
+                <div className="overflow-y-auto flex-1 flex items-center justify-center">
+                  <img src={selectedSetlistImage} alt="Setlist" className="max-w-full h-auto object-contain rounded-xl border border-gray-800 shadow-inner" />
                 </div>
               </div>
             </div>
@@ -599,13 +599,13 @@ export default function App() {
 
           {selectedSong && (
             <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-              <div className="bg-gray-900 border border-gray-800 w-full max-w-2xl rounded-2xl p-6 shadow-2xl space-y-5 max-h-[90vh] flex flex-col">
-                <div className="flex justify-between items-start border-b border-gray-800 pb-3">
+              <div className="bg-gray-900 border border-gray-800 w-full max-w-2xl max-h-[90dvh] max-w-[95vw] rounded-2xl p-6 shadow-2xl flex flex-col overflow-hidden">
+                <div className="flex justify-between items-start border-b border-gray-800 pb-3 mb-4 shrink-0">
                   <div>
                     <h3 className="text-lg font-black text-white">{selectedSong.title}</h3>
                     <p className="text-xs text-amber-500 font-semibold">{selectedSong.artist || 'Unbekannter Interpret'}</p>
                   </div>
-                  <button onClick={() => { setSelectedSong(null); setGeneratedPdfPreviewUrl(null); }} className="p-1 bg-gray-950 border border-gray-800 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white transition-colors text-xs font-bold px-3 py-1.5">Schließen</button>
+                  <button onClick={() => { setSelectedSong(null); setGeneratedPdfPreviewUrl(null); }} className="p-1 bg-gray-950 border border-gray-800 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white transition-colors text-xs font-bold px-3 py-1.5 shrink-0">Schließen</button>
                 </div>
 
                 <div className="space-y-4 flex-1 overflow-y-auto pr-1">
@@ -620,14 +620,14 @@ export default function App() {
                     <div className="flex flex-col gap-2">
                       {selectedSong.tab_link && (
                         <div className="bg-gray-950 border border-gray-800 p-3 rounded-xl flex items-center justify-between">
-                          <span className="text-xs font-bold text-gray-300">Gitarren Tabs / Link:</span>
+                          <span className="text-xs font-bold text-gray-300">Gitarren Tabs:</span>
                           <a href={selectedSong.tab_link} target="_blank" rel="noopener noreferrer" className="text-xs bg-amber-500 text-gray-950 font-bold px-3 py-1.5 rounded-lg hover:bg-amber-600 transition-colors">🌐 Tab öffnen</a>
                         </div>
                       )}
                       
                       {selectedSong.pdf_url && (
                         <div className="bg-gray-950 border border-gray-800 p-3 rounded-xl flex items-center justify-between">
-                          <span className="text-xs font-bold text-gray-300">Noten / Text als externes PDF:</span>
+                          <span className="text-xs font-bold text-gray-300">Noten PDF:</span>
                           <a href={selectedSong.pdf_url} target="_blank" rel="noopener noreferrer" className="text-xs bg-red-500/20 text-red-400 border border-red-500/30 font-bold px-3 py-1.5 rounded-lg hover:bg-red-500/30 transition-colors">📄 PDF öffnen</a>
                         </div>
                       )}
@@ -638,7 +638,7 @@ export default function App() {
                     <div className="flex justify-between items-center mb-3">
                       <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">📜 Songtext</h4>
                       {selectedSong.lyrics && (
-                        <button type="button" onClick={() => generatePdfPreview(selectedSong.lyrics)} className="bg-gray-800 border border-gray-700 text-gray-200 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-gray-700 hover:text-white transition-colors flex items-center gap-1.5">📄 Als PDF anzeigen</button>
+                        <button type="button" onClick={() => generatePdfPreview(selectedSong.lyrics)} className="bg-gray-800 border border-gray-700 text-gray-200 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-gray-700 hover:text-white transition-colors flex items-center gap-1.5">📄 PDF Ansicht</button>
                       )}
                     </div>
                     <p className="text-xs text-gray-200 whitespace-pre-wrap font-sans leading-relaxed">{selectedSong.lyrics || 'Kein Songtext hinterlegt.'}</p>
@@ -653,7 +653,7 @@ export default function App() {
                 </div>
 
                 {(myProfile.can_manage_events || myProfile.is_admin) && (
-                  <div className="pt-2 border-t border-gray-800 flex justify-end">
+                  <div className="pt-4 mt-2 border-t border-gray-800 flex justify-end shrink-0">
                     <button onClick={() => handleDeleteSong(selectedSong.id)} className="text-xs bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 font-bold px-3 py-2 rounded-xl transition-colors">🗑️ Song löschen</button>
                   </div>
                 )}
@@ -663,23 +663,23 @@ export default function App() {
 
           {selectedDayDetails && (
             <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-              <div className="bg-gray-900 border border-gray-800 w-full max-w-md rounded-2xl p-6 shadow-2xl space-y-4">
-                <div className="flex justify-between items-start border-b border-gray-800 pb-3">
+              <div className="bg-gray-900 border border-gray-800 w-full max-w-md max-h-[90dvh] max-w-[95vw] rounded-2xl p-6 shadow-2xl flex flex-col overflow-hidden">
+                <div className="flex justify-between items-start border-b border-gray-800 pb-3 mb-4 shrink-0">
                   <div>
                     <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider">Tagesdetails</h3>
                     <p className="text-sm font-black text-white mt-0.5">{selectedDayDetails.dayLabel}</p>
                   </div>
-                  <button onClick={() => setSelectedDayDetails(null)} className="p-1 bg-gray-950 border border-gray-800 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white transition-colors text-xs font-bold px-2.5 py-1">Schließen</button>
+                  <button onClick={() => setSelectedDayDetails(null)} className="p-1 bg-gray-950 border border-gray-800 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white transition-colors text-xs font-bold px-2.5 py-1 shrink-0">Schließen</button>
                 </div>
 
-                <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+                <div className="space-y-3 flex-1 overflow-y-auto pr-1">
                   <div>
                     <h4 className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-1.5">🎵 Termine & Gigs</h4>
                     {selectedDayDetails.events.length === 0 ? (
                       <p className="text-xs text-gray-600 italic">Keine Termine an diesem Tag.</p>
                     ) : (
                       selectedDayDetails.events.map(e => (
-                        <div key={e.id} className="bg-gray-950 border border-gray-850 p-2.5 rounded-xl text-xs space-y-1">
+                        <div key={e.id} className="bg-gray-950 border border-gray-850 p-2.5 rounded-xl text-xs space-y-1 mb-2">
                           <div className="flex justify-between font-bold text-gray-200">
                             <span>{e.title}</span>
                             <span className="text-blue-400 uppercase text-[9px] border border-blue-500/20 bg-blue-500/5 px-1.5 rounded">{e.event_type}</span>
@@ -1054,7 +1054,6 @@ export default function App() {
                 <button type="submit" className="bg-amber-500 hover:bg-amber-600 text-gray-950 text-xs font-bold px-4 py-2 rounded-xl transition-colors">Eintragen & Speichern</button>
               </form>
 
-              {/* LISTE DER EIGENEN ABWESENHEITEN ZUM LÖSCHEN */}
               <div className="bg-gray-900/60 border border-gray-800 p-5 rounded-2xl space-y-4">
                 <h3 className="text-xs font-bold uppercase text-gray-400 tracking-wider">📋 Meine eingetragenen Abwesenheiten</h3>
                 {myOwnAbsences.length === 0 ? (
@@ -1179,7 +1178,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 text-gray-100 flex flex-col justify-between p-6 font-sans">
+    <div className="min-h-[100dvh] w-full bg-gray-950 text-gray-100 flex flex-col justify-between p-6 font-sans m-0">
       <div className="flex flex-col items-center mt-8">
         <div className="h-12 w-12 rounded-2xl bg-gradient-to-tr from-amber-500 to-orange-600 flex items-center justify-center shadow-lg"><span className="text-xl font-black text-gray-950">BB</span></div>
         <h1 className="text-2xl font-bold tracking-tight mt-4">Burnin' Bugs Portal</h1>

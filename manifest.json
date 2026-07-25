@@ -1,0 +1,9 @@
+{
+    "name": "Burnin Bugs Termin App",
+    "short_name": "Burnin Bugs",
+    "icons": [{"src": "/icon.png", "type": "image/png", "sizes": "512x512"}],
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#030712",
+    "theme_color": "#f59e0b"
+  }
