@@ -2,19 +2,21 @@
 <html lang="de">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- DIESE ZEILE VERHINDERT DAS AUTOMATISCHE ZOOMEN AUF DEM HANDY -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0" />
     
     <title>Burnin' Bugs Portal</title>
     
-    <!-- Lädt das Design-Werkzeug direkt -->
+    <!-- Lädt das Design-Werkzeug -->
     <script src="https://cdn.tailwindcss.com"></script>
 
-    <!-- PWA / App Icons -->
+    <!-- App Icons -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/icon.png" />
     <link rel="manifest" href="/manifest.json" />
   </head>
-  <body>
+  <!-- Die Hintergrundfarbe direkt auf den Body setzen gegen weiße Balken -->
+  <body class="bg-gray-950 text-gray-100 m-0 p-0 overscroll-none">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
