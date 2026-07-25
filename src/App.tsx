@@ -125,6 +125,17 @@ export default function App() {
   const fetchProfile = async (userId: string) => {
     const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
     if (data) {
+      // --- DER TÜRSTEHER ---
+      // Wenn der Account nicht genehmigt und nicht Admin ist, fliegt er sofort wieder raus.
+      if (!data.is_approved && !data.is_admin) {
+        await supabase.auth.signOut();
+        setMessage({ text: 'Dein Account wurde noch nicht vom Admin freigeschaltet.', isError: true });
+        setMyProfile(null);
+        setSession(null);
+        return;
+      }
+      // ---------------------
+
       setMyProfile(data);
       await fetchAllProfiles();
     }
@@ -448,24 +459,26 @@ export default function App() {
       if (error) return setMessage({ text: error.message, isError: true });
       if (data?.user) {
         const combinedName = `${firstName.trim()} ${lastName.trim()}`;
-        const { error: profileError } = await supabase.from('profiles').insert([
+        
+        // --- FIX FÜR DAS SPEICHERN ---
+        // upsert() erzwingt, dass die Daten geschrieben werden, auch wenn Supabase im Hintergrund schon eine leere Zeile angelegt hat.
+        const { error: profileError } = await supabase.from('profiles').upsert([
           { id: data.user.id, full_name: combinedName, birth_date: birthDate, is_approved: false }
         ]);
+        
         if (profileError) return setMessage({ text: profileError.message, isError: true });
+        
+        // Loggt den User nach der Registrierung sofort aus, damit die App gar nicht erst versucht, ihn als unbestätigt reinzulassen
+        await supabase.auth.signOut();
+        
         setMessage({ text: 'Registrierung erfolgreich! Bitte warte auf die Admin-Freischaltung.', isError: false });
         setIsRegister(false);
-        setFirstName(''); setLastName('');
+        setFirstName(''); setLastName(''); setBirthDate('');
       }
     } else {
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) return setMessage({ text: error.message, isError: true });
-      if (data?.user) {
-        const { data: prof } = await supabase.from('profiles').select('is_approved, is_admin').eq('id', data.user.id).single();
-        if (prof && !prof.is_approved && !prof.is_admin) {
-          await supabase.auth.signOut();
-          return setMessage({ text: 'Dein Account wurde noch nicht vom Admin freigeschaltet.', isError: true });
-        }
-      }
+      // Wenn der Login klappt, fängt der "Türsteher" oben in fetchProfile jetzt den Rest ab!
     }
   };
 
@@ -535,7 +548,6 @@ export default function App() {
 
   const myOwnAbsences = absences.filter(a => a.user_id === session?.user?.id);
 
-  // NEU: Berechnet wie viele Benutzer noch nicht verifiziert sind
   const pendingRequests = allProfiles.filter(p => !p.is_approved && !p.is_admin);
   const pendingCount = pendingRequests.length;
 
@@ -572,7 +584,6 @@ export default function App() {
                   <span className={`h-0.5 w-4 bg-gray-200 rounded transition-opacity duration-300 ${isMenuOpen ? 'opacity-0' : ''}`}></span>
                   <span className={`h-0.5 w-4 bg-gray-200 rounded transition-transform duration-300 ${isMenuOpen ? '-rotate-45 -translate-y-1' : ''}`}></span>
                   
-                  {/* NEU: Roter Benachrichtigungs-Punkt am Menü wenn jemand wartet */}
                   {myProfile.is_admin && pendingCount > 0 && (
                     <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-bold h-5 w-5 rounded-full flex items-center justify-center shadow-[0_0_10px_rgba(239,68,68,0.6)] animate-pulse">{pendingCount}</span>
                   )}
@@ -588,7 +599,6 @@ export default function App() {
               <button onClick={() => navigateTo('kalender')} className={`text-2xl font-bold ${currentView === 'kalender' ? 'text-amber-500' : 'text-gray-500'}`}>🌴 Kalender / Urlaub</button>
               <button onClick={() => navigateTo('bandkasse')} className={`text-2xl font-bold ${currentView === 'bandkasse' ? 'text-amber-500' : 'text-gray-500'}`}>💰 Bandkasse</button>
               
-              {/* NEU: Notification im Menü bei Verwaltung */}
               {myProfile.is_admin && (
                 <button onClick={() => navigateTo('verwaltung')} className={`text-2xl font-bold flex items-center gap-3 ${currentView === 'verwaltung' ? 'text-amber-500' : 'text-gray-500'}`}>
                   🛡️ Verwaltung
@@ -1125,7 +1135,6 @@ export default function App() {
                       const isPending = !p.is_approved && !p.is_admin;
                       
                       return (
-                        // NEU: Unbestätigte Accounts werden mit einem roten Balken und leichtem Hintergrund hervorgehoben
                         <tr key={p.id} className={`${isPending ? 'bg-red-500/[0.05] border-l-2 border-red-500' : isMe ? 'bg-amber-500/[0.02]' : ''}`}>
                           <td className="py-4 pl-3 font-medium">
                             {p.full_name} 
@@ -1146,7 +1155,6 @@ export default function App() {
                             {isMe || p.is_admin ? (
                               <span className="text-[12px] px-2.5 py-1.5 text-emerald-400 font-bold bg-emerald-500/10 rounded-lg border border-emerald-500/20">Aktiv</span>
                             ) : (
-                              // NEU: Der Bestätigen Button leuchtet grün für wartende Accounts
                               <button onClick={() => toggleApprove(p.id, p.is_approved)} className={`text-[12px] px-2.5 py-1.5 rounded-lg border transition-all ${p.is_approved ? 'bg-red-500/10 text-red-400 border-red-500/20 hover:bg-red-500/20' : 'bg-emerald-500 hover:bg-emerald-600 text-gray-950 font-black border-transparent shadow-[0_0_15px_rgba(16,185,129,0.4)] animate-pulse'}`}>
                                 {p.is_approved ? 'Sperren' : '✓ Verifizieren'}
                               </button>
