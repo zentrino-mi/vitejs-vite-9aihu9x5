@@ -1187,7 +1187,7 @@ export default function App() {
         <form onSubmit={handleSubmit} className="space-y-4">
           {isRegister && (
             <>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-[12px] text-gray-400 uppercase mb-1">Vorname</label>
                   <input type="text" value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="Max" className="w-full bg-gray-950 border border-gray-800 rounded-xl px-4 py-3 text-[16px] text-white focus:outline-none focus:border-amber-500" required />

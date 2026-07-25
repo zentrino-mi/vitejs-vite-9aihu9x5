@@ -28,3 +28,13 @@ input, textarea, select {
 input[type="date"], input[type="time"] {
   -webkit-appearance: none;
 }
+/* Der ultimative Fix für ausbrechende Boxen und Felder */
+*, *::before, *::after {
+  box-sizing: border-box !important;
+}
+
+input, textarea, select {
+  max-width: 100% !important;
+  width: 100% !important;
+  min-width: 0 !important;
+}
