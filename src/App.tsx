@@ -82,11 +82,9 @@ export default function App() {
   const [instruments, setInstruments] = useState<string[]>(['Drums', 'Bass', 'Lead Gitarre', 'Gesang', 'Piano']);
 
   useEffect(() => {
-    // Prüfe aktuellen Push-Status beim Start
     if ('Notification' in window) {
       setPushPermission(Notification.permission);
     }
-    // Registriere den Service Worker im Hintergrund
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(err => console.error('Service Worker Fehler:', err));
     }
@@ -459,7 +457,26 @@ export default function App() {
     }
   };
 
-  // --- NEUE FUNKTION: Die native System-Anfrage starten ---
+  // --- NEUE FUNKTION: Ändern des Instruments ---
+  const handleInstrumentChange = async (userId: string, value: string) => {
+    let newInstrument = value === '' ? null : value;
+    
+    // Wenn der Admin "NEW" auswählt, wird er nach dem Namen des neuen Instruments gefragt
+    if (value === 'NEW') {
+      const input = window.prompt('Welches neue Instrument soll hinzugefügt werden? (z.B. Saxophon)');
+      if (!input || input.trim() === '') return; // Abbrechen, wenn nichts eingegeben wurde
+      newInstrument = input.trim();
+    }
+
+    const { error } = await supabase.from('profiles').update({ instrument: newInstrument }).eq('id', userId);
+    
+    if (error) {
+      alert('⚠️ Fehler beim Ändern des Instruments:\n\n' + error.message);
+    } else {
+      fetchAllProfiles(); // Lädt die Profile neu und aktualisiert sofort die Tabelle
+    }
+  };
+
   const requestNotificationPermission = async () => {
     if (!('Notification' in window)) {
       alert('Dein Gerät oder Browser unterstützt leider keine Web-Push-Mitteilungen.');
@@ -623,7 +640,6 @@ export default function App() {
 
           {isMenuOpen && (
             <div className="fixed inset-0 bg-gray-950/98 backdrop-blur-xl z-40 flex flex-col items-center justify-center space-y-6">
-              {/* NEU: Auffälliger Button im Menü, wenn Erlaubnis noch fehlt */}
               {pushPermission !== 'granted' && (
                 <button onClick={requestNotificationPermission} className="text-[16px] font-bold text-emerald-400 bg-emerald-500/10 px-5 py-3 rounded-2xl border border-emerald-500/30 animate-pulse active:scale-95 transition-transform mb-4">
                   🔔 Push-Mitteilungen erlauben
@@ -1177,7 +1193,20 @@ export default function App() {
                             {isMe && <span className="text-[10px] bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded ml-2 font-bold">Du</span>}
                             {isPending && <span className="text-[10px] bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded ml-2 font-bold uppercase tracking-wider">Wartet</span>}
                           </td>
-                          <td className="py-4">🎵 {p.instrument || 'Nicht zugewiesen'}</td>
+                          <td className="py-4">
+                            {/* Dropdown-Menü für das Instrument */}
+                            <select
+                              value={p.instrument || ''}
+                              onChange={(e) => handleInstrumentChange(p.id, e.target.value)}
+                              className="bg-gray-950 border border-gray-800 text-emerald-400 font-medium text-[12px] rounded-lg px-2 py-1 focus:outline-none focus:border-amber-500 cursor-pointer"
+                            >
+                              <option value="" className="text-gray-500">Ohne Instrument</option>
+                              {instruments.map(inst => (
+                                <option key={inst} value={inst} className="text-gray-300">{inst}</option>
+                              ))}
+                              <option value="NEW" className="text-amber-500 font-bold">+ Neu...</option>
+                            </select>
+                          </td>
                           <td className="py-4">
                             {p.is_admin ? (
                               <span className="text-[12px] px-2 py-1 rounded-md border bg-purple-500/10 text-purple-400 border-purple-500/30 font-bold">👑 Haupt-Admin</span>
