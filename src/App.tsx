@@ -125,8 +125,6 @@ export default function App() {
   const fetchProfile = async (userId: string) => {
     const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
     if (data) {
-      // --- DER TÜRSTEHER ---
-      // Wenn der Account nicht genehmigt und nicht Admin ist, fliegt er sofort wieder raus.
       if (!data.is_approved && !data.is_admin) {
         await supabase.auth.signOut();
         setMessage({ text: 'Dein Account wurde noch nicht vom Admin freigeschaltet.', isError: true });
@@ -134,8 +132,6 @@ export default function App() {
         setSession(null);
         return;
       }
-      // ---------------------
-
       setMyProfile(data);
       await fetchAllProfiles();
     }
@@ -433,15 +429,25 @@ export default function App() {
     fetchResponses();
   };
 
+  // --- HIER IST DAS UPDATE: Fehlermeldungen für die Admin-Buttons ---
   const toggleApprove = async (id: string, currentStatus: boolean) => {
-    await supabase.from('profiles').update({ is_approved: !currentStatus }).eq('id', id);
-    fetchAllProfiles();
+    const { error } = await supabase.from('profiles').update({ is_approved: !currentStatus }).eq('id', id);
+    if (error) {
+      alert('⚠️ Fehler beim Verifizieren:\n\nDie Datenbank blockiert diese Aktion (' + error.message + ').\n\nHast du den SQL-Befehl im Supabase Dashboard ausgeführt?');
+    } else {
+      fetchAllProfiles();
+    }
   };
 
   const togglePermission = async (id: string, columnName: string, currentStatus: boolean) => {
-    await supabase.from('profiles').update({ [columnName]: !currentStatus }).eq('id', id);
-    fetchAllProfiles();
+    const { error } = await supabase.from('profiles').update({ [columnName]: !currentStatus }).eq('id', id);
+    if (error) {
+      alert('⚠️ Fehler beim Ändern der Rechte:\n\n' + error.message);
+    } else {
+      fetchAllProfiles();
+    }
   };
+  // -------------------------------------------------------------------
 
   const getParsedDate = (dateStr: string) => {
     const d = new Date(dateStr);
@@ -459,18 +465,12 @@ export default function App() {
       if (error) return setMessage({ text: error.message, isError: true });
       if (data?.user) {
         const combinedName = `${firstName.trim()} ${lastName.trim()}`;
-        
-        // --- FIX FÜR DAS SPEICHERN ---
-        // upsert() erzwingt, dass die Daten geschrieben werden, auch wenn Supabase im Hintergrund schon eine leere Zeile angelegt hat.
         const { error: profileError } = await supabase.from('profiles').upsert([
           { id: data.user.id, full_name: combinedName, birth_date: birthDate, is_approved: false }
         ]);
         
         if (profileError) return setMessage({ text: profileError.message, isError: true });
-        
-        // Loggt den User nach der Registrierung sofort aus, damit die App gar nicht erst versucht, ihn als unbestätigt reinzulassen
         await supabase.auth.signOut();
-        
         setMessage({ text: 'Registrierung erfolgreich! Bitte warte auf die Admin-Freischaltung.', isError: false });
         setIsRegister(false);
         setFirstName(''); setLastName(''); setBirthDate('');
@@ -478,7 +478,6 @@ export default function App() {
     } else {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) return setMessage({ text: error.message, isError: true });
-      // Wenn der Login klappt, fängt der "Türsteher" oben in fetchProfile jetzt den Rest ab!
     }
   };
 
@@ -547,7 +546,6 @@ export default function App() {
   );
 
   const myOwnAbsences = absences.filter(a => a.user_id === session?.user?.id);
-
   const pendingRequests = allProfiles.filter(p => !p.is_approved && !p.is_admin);
   const pendingCount = pendingRequests.length;
 
