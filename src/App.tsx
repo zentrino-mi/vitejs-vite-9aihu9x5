@@ -16,6 +16,9 @@ export default function App() {
   const [myProfile, setMyProfile] = useState<any>(null);
   const [allProfiles, setAllProfiles] = useState<any[]>([]);
 
+  // Push-Benachrichtigungen Status
+  const [pushPermission, setPushPermission] = useState<NotificationPermission | 'default'>('default');
+
   // Navigation & Ansichten
   const [currentView, setCurrentView] = useState<'termine' | 'kalender' | 'verwaltung' | 'bandkasse' | 'songs'>('termine'); 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -79,6 +82,15 @@ export default function App() {
   const [instruments, setInstruments] = useState<string[]>(['Drums', 'Bass', 'Lead Gitarre', 'Gesang', 'Piano']);
 
   useEffect(() => {
+    // Prüfe aktuellen Push-Status beim Start
+    if ('Notification' in window) {
+      setPushPermission(Notification.permission);
+    }
+    // Registriere den Service Worker im Hintergrund
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(err => console.error('Service Worker Fehler:', err));
+    }
+
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       if (session) {
@@ -429,7 +441,6 @@ export default function App() {
     fetchResponses();
   };
 
-  // --- HIER IST DAS UPDATE: Fehlermeldungen für die Admin-Buttons ---
   const toggleApprove = async (id: string, currentStatus: boolean) => {
     const { error } = await supabase.from('profiles').update({ is_approved: !currentStatus }).eq('id', id);
     if (error) {
@@ -447,7 +458,27 @@ export default function App() {
       fetchAllProfiles();
     }
   };
-  // -------------------------------------------------------------------
+
+  // --- NEUE FUNKTION: Die native System-Anfrage starten ---
+  const requestNotificationPermission = async () => {
+    if (!('Notification' in window)) {
+      alert('Dein Gerät oder Browser unterstützt leider keine Web-Push-Mitteilungen.');
+      return;
+    }
+    
+    try {
+      const permission = await Notification.requestPermission();
+      setPushPermission(permission);
+      
+      if (permission === 'granted') {
+        alert('🎉 Perfekt! Das Handy hat die Erlaubnis gespeichert. Die App kann dir jetzt echte Mitteilungen senden.');
+      } else {
+        alert('Die Berechtigung wurde blockiert oder abgelehnt.');
+      }
+    } catch (error) {
+      console.error('Fehler bei der Berechtigungsanfrage:', error);
+    }
+  };
 
   const getParsedDate = (dateStr: string) => {
     const d = new Date(dateStr);
@@ -592,6 +623,13 @@ export default function App() {
 
           {isMenuOpen && (
             <div className="fixed inset-0 bg-gray-950/98 backdrop-blur-xl z-40 flex flex-col items-center justify-center space-y-6">
+              {/* NEU: Auffälliger Button im Menü, wenn Erlaubnis noch fehlt */}
+              {pushPermission !== 'granted' && (
+                <button onClick={requestNotificationPermission} className="text-[16px] font-bold text-emerald-400 bg-emerald-500/10 px-5 py-3 rounded-2xl border border-emerald-500/30 animate-pulse active:scale-95 transition-transform mb-4">
+                  🔔 Push-Mitteilungen erlauben
+                </button>
+              )}
+              
               <button onClick={() => navigateTo('termine')} className={`text-2xl font-bold ${currentView === 'termine' ? 'text-amber-500' : 'text-gray-500'}`}>📅 Termine</button>
               <button onClick={() => navigateTo('songs')} className={`text-2xl font-bold ${currentView === 'songs' ? 'text-amber-500' : 'text-gray-500'}`}>🎵 Songs & Tabs</button>
               <button onClick={() => navigateTo('kalender')} className={`text-2xl font-bold ${currentView === 'kalender' ? 'text-amber-500' : 'text-gray-500'}`}>🌴 Kalender / Urlaub</button>
