@@ -2,8 +2,11 @@
 <html lang="de">
   <head>
     <meta charset="UTF-8" />
-    <!-- DIESE ZEILE VERHINDERT DAS AUTOMATISCHE ZOOMEN AUF DEM HANDY -->
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0" />
+    <!-- Verhindert Zoomen und zwingt die App, den Bereich hinter der Uhrzeit/Notch zu füllen -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    
+    <!-- Färbt den obersten Rand des Handys (bei der Uhrzeit) dunkelgrau -->
+    <meta name="theme-color" content="#030712" />
     
     <title>Burnin' Bugs Portal</title>
     
@@ -15,7 +18,6 @@
     <link rel="apple-touch-icon" href="/icon.png" />
     <link rel="manifest" href="/manifest.json" />
   </head>
-  <!-- Die Hintergrundfarbe direkt auf den Body setzen gegen weiße Balken -->
   <body class="bg-gray-950 text-gray-100 m-0 p-0 overscroll-none">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>

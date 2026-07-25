@@ -1,16 +1,30 @@
 /* Zwingt die Seite, den kompletten Bildschirm auszufüllen, ohne weiße Ränder */
-html, body, #root {
+html, body {
   margin: 0 !important;
   padding: 0 !important;
   width: 100vw;
   min-height: 100vh;
-  background-color: #030712 !important; /* Dunkles Grau aus der App */
-  overflow-x: hidden; /* Verhindert seitliches Scrollen */
-  overscroll-behavior: none; /* Verhindert das typische "Bouncen" und weiße Blitzer beim Scrollen am Rand */
+  /* Spezieller Fix für iPhones, damit unten kein weißer Balken durch die Adressleiste entsteht */
+  min-height: -webkit-fill-available;
+  background-color: #030712 !important;
+  overflow-x: hidden;
+  overscroll-behavior: none;
+}
+
+#root {
+  min-height: 100vh;
+  min-height: -webkit-fill-available;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Zwingt alle Eingabefelder dazu, niemals größer als ihr übergeordneter Kasten zu werden */
 input, textarea, select {
   box-sizing: border-box !important;
   max-width: 100% !important;
+}
+
+/* Verhindert das automatische Aussehen von Standard-Apple-Feldern */
+input[type="date"], input[type="time"] {
+  -webkit-appearance: none;
 }
