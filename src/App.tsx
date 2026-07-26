@@ -322,20 +322,9 @@ export default function App() {
     }
   };
 
-  const handleDeleteAbsence = async (absenceId: string) => {
-    if (confirm('Möchtest du diese Abwesenheit wirklich löschen?')) {
-      const { error } = await supabase.from('user_absences').delete().eq('id', absenceId);
-      if (!error) {
-        setAbsences(prev => prev.filter(a => a.id !== absenceId));
-      } else {
-        alert('Fehler beim Löschen: ' + error.message);
-      }
-    }
-  };
-
+  // --- ANPASSUNG: Jeder darf jetzt Termine speichern ---
   const handleSaveEvent = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!myProfile.can_manage_events && !myProfile.is_admin) return;
 
     let finalImageUrl = eventSetlistImage;
 
@@ -369,10 +358,16 @@ export default function App() {
 
     if (editingEventId) {
       const { error } = await supabase.from('events').update(eventData).eq('id', editingEventId);
-      if (error) return;
+      if (error) {
+        alert('Fehler beim Bearbeiten: ' + error.message);
+        return;
+      }
     } else {
       const { data, error } = await supabase.from('events').insert([{ ...eventData, created_by: session.user.id }]).select();
-      if (error || !data) return;
+      if (error || !data) {
+        alert('Fehler beim Speichern: ' + error?.message);
+        return;
+      }
       savedEventId = data[0].id;
     }
 
@@ -389,9 +384,8 @@ export default function App() {
     setEditingEventId(null); setIsAddingEvent(false); resetForm(); loadData();
   };
 
+  // --- ANPASSUNG: Jeder darf jetzt Termine löschen ---
   const handleDeleteEvent = async (eventId: string) => {
-    if (!myProfile.can_manage_events && !myProfile.is_admin) return;
-    
     if (confirm('Bist du sicher, dass du diesen Termin komplett löschen willst?')) {
       try {
         await supabase.from('event_responses').delete().eq('event_id', eventId);
@@ -457,14 +451,12 @@ export default function App() {
     }
   };
 
-  // --- NEUE FUNKTION: Ändern des Instruments ---
   const handleInstrumentChange = async (userId: string, value: string) => {
     let newInstrument = value === '' ? null : value;
     
-    // Wenn der Admin "NEW" auswählt, wird er nach dem Namen des neuen Instruments gefragt
     if (value === 'NEW') {
       const input = window.prompt('Welches neue Instrument soll hinzugefügt werden? (z.B. Saxophon)');
-      if (!input || input.trim() === '') return; // Abbrechen, wenn nichts eingegeben wurde
+      if (!input || input.trim() === '') return; 
       newInstrument = input.trim();
     }
 
@@ -473,7 +465,7 @@ export default function App() {
     if (error) {
       alert('⚠️ Fehler beim Ändern des Instruments:\n\n' + error.message);
     } else {
-      fetchAllProfiles(); // Lädt die Profile neu und aktualisiert sofort die Tabelle
+      fetchAllProfiles(); 
     }
   };
 
@@ -763,11 +755,9 @@ export default function App() {
                           </div>
                           <div className="text-gray-400 text-[12px]">🕒 Uhrzeit: {e.event_time.substring(0,5)} Uhr</div>
                           {e.location && <div className="text-gray-500 text-[12px]">📍 Ort: {e.location}</div>}
-                          {(myProfile.can_manage_events || myProfile.is_admin) && (
-                            <div className="pt-1.5 border-t border-gray-800/60 mt-2">
-                              <button type="button" onClick={() => handleDeleteEvent(e.id)} className="text-[12px] text-red-400 hover:underline">🗑️ Aus diesem Tag löschen</button>
-                            </div>
-                          )}
+                          <div className="pt-1.5 border-t border-gray-800/60 mt-2">
+                            <button type="button" onClick={() => handleDeleteEvent(e.id)} className="text-[12px] text-red-400 hover:underline">🗑️ Aus diesem Tag löschen</button>
+                          </div>
                         </div>
                       ))
                     )}
@@ -862,11 +852,10 @@ export default function App() {
             <div className="space-y-6">
               <div className="flex justify-between items-center">
                 <h2 className="text-lg font-bold text-gray-300">{editingEventId ? '✏️ Termin bearbeiten' : 'Terminübersicht'}</h2>
-                {(myProfile.can_manage_events || myProfile.is_admin) && (
-                  <button onClick={() => { if (isAddingEvent) resetForm(); setIsAddingEvent(!isAddingEvent); }} className="bg-amber-500 hover:bg-amber-600 text-gray-950 text-sm font-bold px-3 py-2 rounded-xl transition-transform active:scale-95">
-                    {isAddingEvent ? 'Schließen' : '+ Termin planen'}
-                  </button>
-                )}
+                {/* ANPASSUNG: Der + Termin planen Button ist jetzt für ALLE freigeschaltet */}
+                <button onClick={() => { if (isAddingEvent) resetForm(); setIsAddingEvent(!isAddingEvent); }} className="bg-amber-500 hover:bg-amber-600 text-gray-950 text-sm font-bold px-3 py-2 rounded-xl transition-transform active:scale-95">
+                  {isAddingEvent ? 'Schließen' : '+ Termin planen'}
+                </button>
               </div>
 
               {isAddingEvent && (
@@ -968,12 +957,10 @@ export default function App() {
                                     {ev.location && <div className="flex items-center gap-1.5"><span className="text-amber-500/80">📍</span><span className="truncate text-gray-400">{ev.location}</span></div>}
                                   </div>
 
-                                  {(myProfile.can_manage_events || myProfile.is_admin) && (
-                                    <div className="mt-2.5 flex gap-2">
-                                      <button type="button" onClick={() => startEditEvent(ev)} className="text-[12px] text-gray-400 hover:text-white bg-gray-950 border border-gray-800 px-2.5 py-1 rounded-lg transition-colors">✏️ Bearbeiten</button>
-                                      <button type="button" onClick={() => handleDeleteEvent(ev.id)} className="text-[12px] text-red-400 hover:text-red-350 bg-red-500/10 border border-red-500/20 px-2.5 py-1 rounded-lg transition-colors">🗑️ Termin löschen</button>
-                                    </div>
-                                  )}
+                                  <div className="mt-2.5 flex gap-2">
+                                    <button type="button" onClick={() => startEditEvent(ev)} className="text-[12px] text-gray-400 hover:text-white bg-gray-950 border border-gray-800 px-2.5 py-1 rounded-lg transition-colors">✏️ Bearbeiten</button>
+                                    <button type="button" onClick={() => handleDeleteEvent(ev.id)} className="text-[12px] text-red-400 hover:text-red-350 bg-red-500/10 border border-red-500/20 px-2.5 py-1 rounded-lg transition-colors">🗑️ Termin löschen</button>
+                                  </div>
                                 </div>
 
                                 <div className="flex flex-col gap-1.5 bg-gray-950/60 border border-gray-800/80 p-1.5 rounded-xl min-w-[90px]">
@@ -1194,7 +1181,6 @@ export default function App() {
                             {isPending && <span className="text-[10px] bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded ml-2 font-bold uppercase tracking-wider">Wartet</span>}
                           </td>
                           <td className="py-4">
-                            {/* Dropdown-Menü für das Instrument */}
                             <select
                               value={p.instrument || ''}
                               onChange={(e) => handleInstrumentChange(p.id, e.target.value)}
