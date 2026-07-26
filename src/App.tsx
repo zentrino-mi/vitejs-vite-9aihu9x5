@@ -71,6 +71,7 @@ export default function App() {
   const [eventDate, setEventDate] = useState('');
   const [eventTime, setEventTime] = useState('');
   const [eventLocation, setEventLocation] = useState('');
+  const [eventMapsLink, setEventMapsLink] = useState(''); // NEU: Maps Link State
   const [eventDescription, setEventDescription] = useState('');
   const [eventType, setEventType] = useState<'Probe' | 'Auftritt' | 'Band-Event'>('Probe');
   
@@ -322,7 +323,6 @@ export default function App() {
     }
   };
 
-  // --- ANPASSUNG: Jeder darf jetzt Termine speichern ---
   const handleSaveEvent = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -349,6 +349,7 @@ export default function App() {
       event_date: eventDate,
       event_time: eventTime,
       location: eventLocation,
+      maps_link: eventMapsLink, // Speichert den Link in der Datenbank
       description: eventDescription,
       event_type: eventType,
       setlist_image: eventType === 'Auftritt' ? finalImageUrl : null, 
@@ -384,7 +385,6 @@ export default function App() {
     setEditingEventId(null); setIsAddingEvent(false); resetForm(); loadData();
   };
 
-  // --- ANPASSUNG: Jeder darf jetzt Termine löschen ---
   const handleDeleteEvent = async (eventId: string) => {
     if (confirm('Bist du sicher, dass du diesen Termin komplett löschen willst?')) {
       try {
@@ -410,6 +410,7 @@ export default function App() {
     setEventDate(ev.event_date);
     setEventTime(ev.event_time.substring(0, 5)); 
     setEventLocation(ev.location || '');
+    setEventMapsLink(ev.maps_link || ''); // Lädt den gespeicherten Link
     setEventDescription(ev.description || ''); 
     setEventType(ev.event_type || 'Probe');
     setEventSetlistImage(ev.setlist_image || '');
@@ -419,7 +420,7 @@ export default function App() {
   };
 
   const resetForm = () => {
-    setEventTitle(''); setEventDate(''); setEventTime(''); setEventLocation(''); setEventDescription('');
+    setEventTitle(''); setEventDate(''); setEventTime(''); setEventLocation(''); setEventMapsLink(''); setEventDescription('');
     setEventType('Probe'); setEventSetlistImage(''); setSetlistFile(null); setEditingEventId(null);
   };
 
@@ -588,6 +589,10 @@ export default function App() {
   const myOwnAbsences = absences.filter(a => a.user_id === session?.user?.id);
   const pendingRequests = allProfiles.filter(p => !p.is_approved && !p.is_admin);
   const pendingCount = pendingRequests.length;
+
+  // --- NEU: Extrahiere alle bisherigen, einzigartigen Titel und Locations für die Memory-Funktion ---
+  const uniqueTitles = Array.from(new Set(events.map(e => e.title).filter(Boolean)));
+  const uniqueLocations = Array.from(new Set(events.map(e => e.location).filter(Boolean)));
 
   if (isLoading) {
     return (
@@ -852,7 +857,6 @@ export default function App() {
             <div className="space-y-6">
               <div className="flex justify-between items-center">
                 <h2 className="text-lg font-bold text-gray-300">{editingEventId ? '✏️ Termin bearbeiten' : 'Terminübersicht'}</h2>
-                {/* ANPASSUNG: Der + Termin planen Button ist jetzt für ALLE freigeschaltet */}
                 <button onClick={() => { if (isAddingEvent) resetForm(); setIsAddingEvent(!isAddingEvent); }} className="bg-amber-500 hover:bg-amber-600 text-gray-950 text-sm font-bold px-3 py-2 rounded-xl transition-transform active:scale-95">
                   {isAddingEvent ? 'Schließen' : '+ Termin planen'}
                 </button>
@@ -860,6 +864,14 @@ export default function App() {
 
               {isAddingEvent && (
                 <form onSubmit={handleSaveEvent} className="bg-gray-900/90 border border-amber-500/20 p-5 rounded-2xl space-y-4 shadow-lg">
+                  {/* NEU: Unsichtbare Listen für die Autovervollständigung */}
+                  <datalist id="saved-titles">
+                    {uniqueTitles.map((title, idx) => <option key={idx} value={title as string} />)}
+                  </datalist>
+                  <datalist id="saved-locations">
+                    {uniqueLocations.map((loc, idx) => <option key={idx} value={loc as string} />)}
+                  </datalist>
+
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Typ</label>
@@ -871,7 +883,8 @@ export default function App() {
                     </div>
                     <div>
                       <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Titel / Name</label>
-                      <input type="text" value={eventTitle} onChange={(e) => setEventTitle(e.target.value)} placeholder="z.B. Kneipen-Gig oder Grillabend" className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500" required />
+                      {/* NEU: list="saved-titles" verbindet das Input-Feld mit der Memory-Funktion */}
+                      <input type="text" list="saved-titles" value={eventTitle} onChange={(e) => setEventTitle(e.target.value)} placeholder="z.B. Probe im Bunker" className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500" required />
                     </div>
                     <div>
                       <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Datum</label>
@@ -882,9 +895,18 @@ export default function App() {
                       <input type="time" value={eventTime} onChange={(e) => setEventTime(e.target.value)} className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500" required />
                     </div>
                   </div>
-                  <div>
-                    <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Location</label>
-                    <input type="text" value={eventLocation} onChange={(e) => setEventLocation(e.target.value)} placeholder="Adresse oder Location-Name" className="w-full bg-gray-950 border border-gray-800 rounded-xl px-4 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500" />
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Location</label>
+                      {/* NEU: list="saved-locations" */}
+                      <input type="text" list="saved-locations" value={eventLocation} onChange={(e) => setEventLocation(e.target.value)} placeholder="Adresse oder Location-Name" className="w-full bg-gray-950 border border-gray-800 rounded-xl px-4 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500" />
+                    </div>
+                    <div>
+                      <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Google Maps Link (optional)</label>
+                      {/* NEU: Feld für den Google Maps Link */}
+                      <input type="url" value={eventMapsLink} onChange={(e) => setEventMapsLink(e.target.value)} placeholder="https://maps.app.goo.gl/..." className="w-full bg-gray-950 border border-gray-800 rounded-xl px-4 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500" />
+                    </div>
                   </div>
 
                   {eventType === 'Auftritt' && (
@@ -952,9 +974,20 @@ export default function App() {
                                     <h3 className="text-[16px] font-bold text-gray-100 tracking-tight truncate">{ev.title}</h3>
                                     <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded uppercase tracking-wider ${ev.event_type === 'Auftritt' ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20' : ev.event_type === 'Band-Event' ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20' : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'}`}>{ev.event_type}</span>
                                   </div>
-                                  <div className="space-y-1 text-sm text-gray-400">
+                                  <div className="space-y-1 text-sm text-gray-400 mt-1">
                                     <div className="flex items-center gap-1.5"><span className="text-amber-500/80">🕒</span><span className="font-medium text-gray-300">{ev.event_time.substring(0, 5)} Uhr</span></div>
-                                    {ev.location && <div className="flex items-center gap-1.5"><span className="text-amber-500/80">📍</span><span className="truncate text-gray-400">{ev.location}</span></div>}
+                                    {ev.location && (
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        <span className="text-amber-500/80">📍</span>
+                                        <span className="text-gray-400">{ev.location}</span>
+                                        {/* NEU: Der klickbare Maps-Link direkt in der Übersicht */}
+                                        {ev.maps_link && (
+                                          <a href={ev.maps_link} target="_blank" rel="noopener noreferrer" className="text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-1.5 py-0.5 rounded font-bold hover:bg-blue-500/20 ml-1 transition-colors">
+                                            🗺️ Karte
+                                          </a>
+                                        )}
+                                      </div>
+                                    )}
                                   </div>
 
                                   <div className="mt-2.5 flex gap-2">
