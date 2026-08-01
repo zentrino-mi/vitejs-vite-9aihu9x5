@@ -228,9 +228,10 @@ export default function App() {
     setGeneratedPdfPreviewUrl(pdfBlobUrl.toString());
   };
 
+  // --- ANPASSUNG: Jeder darf jetzt Songs hinzufügen ---
   const handleAddSong = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!myProfile.can_manage_events && !myProfile.is_admin) return;
+    // Die Sperre wurde hier entfernt! Jeder darf eintragen.
 
     const { error } = await supabase.from('songs').insert([
       {
@@ -254,7 +255,7 @@ export default function App() {
   };
 
   const handleDeleteSong = async (songId: string) => {
-    if (!myProfile.can_manage_events && !myProfile.is_admin) return;
+    if (!myProfile.can_manage_events && !myProfile.is_admin) return; // Löschen bleibt beim Admin!
     if (confirm('Bist du sicher, dass du diesen Song löschen möchtest?')) {
       const { error } = await supabase.from('songs').delete().eq('id', songId);
       if (!error) {
@@ -349,7 +350,7 @@ export default function App() {
       event_date: eventDate,
       event_time: eventTime,
       location: eventLocation,
-      maps_link: eventMapsLink, // Speichert den Link in der Datenbank
+      maps_link: eventMapsLink, 
       description: eventDescription,
       event_type: eventType,
       setlist_image: eventType === 'Auftritt' ? finalImageUrl : null, 
@@ -410,7 +411,7 @@ export default function App() {
     setEventDate(ev.event_date);
     setEventTime(ev.event_time.substring(0, 5)); 
     setEventLocation(ev.location || '');
-    setEventMapsLink(ev.maps_link || ''); // Lädt den gespeicherten Link
+    setEventMapsLink(ev.maps_link || '');
     setEventDescription(ev.description || ''); 
     setEventType(ev.event_type || 'Probe');
     setEventSetlistImage(ev.setlist_image || '');
@@ -590,7 +591,6 @@ export default function App() {
   const pendingRequests = allProfiles.filter(p => !p.is_approved && !p.is_admin);
   const pendingCount = pendingRequests.length;
 
-  // --- NEU: Extrahiere alle bisherigen, einzigartigen Titel und Locations für die Memory-Funktion ---
   const uniqueTitles = Array.from(new Set(events.map(e => e.title).filter(Boolean)));
   const uniqueLocations = Array.from(new Set(events.map(e => e.location).filter(Boolean)));
 
@@ -776,11 +776,10 @@ export default function App() {
             <div className="space-y-6">
               <div className="flex justify-between items-center flex-wrap gap-3">
                 <h2 className="text-lg font-bold text-gray-300">🎵 Song-Repertoire ({songs.length})</h2>
-                {(myProfile.can_manage_events || myProfile.is_admin) && (
-                  <button onClick={() => setIsAddingSong(!isAddingSong)} className="bg-amber-500 hover:bg-amber-600 text-gray-950 text-sm font-bold px-3 py-2 rounded-xl transition-transform active:scale-95">
-                    {isAddingSong ? 'Schließen' : '+ Song hinzufügen'}
-                  </button>
-                )}
+                {/* ANPASSUNG: Der Button ist jetzt für alle sichtbar */}
+                <button onClick={() => setIsAddingSong(!isAddingSong)} className="bg-amber-500 hover:bg-amber-600 text-gray-950 text-sm font-bold px-3 py-2 rounded-xl transition-transform active:scale-95">
+                  {isAddingSong ? 'Schließen' : '+ Song hinzufügen'}
+                </button>
               </div>
 
               {isAddingSong && (
@@ -864,7 +863,6 @@ export default function App() {
 
               {isAddingEvent && (
                 <form onSubmit={handleSaveEvent} className="bg-gray-900/90 border border-amber-500/20 p-5 rounded-2xl space-y-4 shadow-lg">
-                  {/* NEU: Unsichtbare Listen für die Autovervollständigung */}
                   <datalist id="saved-titles">
                     {uniqueTitles.map((title, idx) => <option key={idx} value={title as string} />)}
                   </datalist>
@@ -883,7 +881,6 @@ export default function App() {
                     </div>
                     <div>
                       <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Titel / Name</label>
-                      {/* NEU: list="saved-titles" verbindet das Input-Feld mit der Memory-Funktion */}
                       <input type="text" list="saved-titles" value={eventTitle} onChange={(e) => setEventTitle(e.target.value)} placeholder="z.B. Probe im Bunker" className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500" required />
                     </div>
                     <div>
@@ -899,12 +896,10 @@ export default function App() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Location</label>
-                      {/* NEU: list="saved-locations" */}
                       <input type="text" list="saved-locations" value={eventLocation} onChange={(e) => setEventLocation(e.target.value)} placeholder="Adresse oder Location-Name" className="w-full bg-gray-950 border border-gray-800 rounded-xl px-4 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500" />
                     </div>
                     <div>
                       <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Google Maps Link (optional)</label>
-                      {/* NEU: Feld für den Google Maps Link */}
                       <input type="url" value={eventMapsLink} onChange={(e) => setEventMapsLink(e.target.value)} placeholder="https://maps.app.goo.gl/..." className="w-full bg-gray-950 border border-gray-800 rounded-xl px-4 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500" />
                     </div>
                   </div>
@@ -980,7 +975,6 @@ export default function App() {
                                       <div className="flex items-center gap-1.5 flex-wrap">
                                         <span className="text-amber-500/80">📍</span>
                                         <span className="text-gray-400">{ev.location}</span>
-                                        {/* NEU: Der klickbare Maps-Link direkt in der Übersicht */}
                                         {ev.maps_link && (
                                           <a href={ev.maps_link} target="_blank" rel="noopener noreferrer" className="text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-1.5 py-0.5 rounded font-bold hover:bg-blue-500/20 ml-1 transition-colors">
                                             🗺️ Karte
