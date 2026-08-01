@@ -18,7 +18,6 @@ export default function App() {
 
   const [pushPermission, setPushPermission] = useState<NotificationPermission | 'default'>('default');
 
-  // NEU: Navigation wurde um 'setlisten' erweitert
   const [currentView, setCurrentView] = useState<'termine' | 'kalender' | 'verwaltung' | 'bandkasse' | 'songs' | 'setlisten'>('termine'); 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [activeFilter, setActiveFilter] = useState<'all' | 'Probe' | 'Auftritt' | 'Band-Event'>('all');
@@ -68,18 +67,19 @@ export default function App() {
   const [eventDescription, setEventDescription] = useState('');
   const [eventType, setEventType] = useState<'Probe' | 'Auftritt' | 'Band-Event'>('Probe');
   
+  // NEU: State für die Checkbox zum Speichern der Standard-Werte
+  const [saveAsDefault, setSaveAsDefault] = useState(false);
+
   const [eventSetlistImage, setEventSetlistImage] = useState(''); 
   const [setlistFile, setSetlistFile] = useState<File | null>(null); 
 
-  // --- Setlist Planer & Vorlagen States ---
-  const [savedSetlists, setSavedSetlists] = useState<any[]>([]); // Die Vorlagen
-  const [planningSetlistEvent, setPlanningSetlistEvent] = useState<any | null>(null); // Wenn man für ein Event plant
-  const [planningSetlistTemplate, setPlanningSetlistTemplate] = useState<any | null>(null); // Wenn man eine Vorlage plant
+  const [savedSetlists, setSavedSetlists] = useState<any[]>([]); 
+  const [planningSetlistEvent, setPlanningSetlistEvent] = useState<any | null>(null); 
+  const [planningSetlistTemplate, setPlanningSetlistTemplate] = useState<any | null>(null); 
   
   const [setlistData, setSetlistData] = useState<any[]>([]);
   const [activeSetId, setActiveSetId] = useState<string | null>(null);
   const [setlistSearchQuery, setSetlistSearchQuery] = useState('');
-  // ----------------------------------
 
   const [instruments, setInstruments] = useState<string[]>(['Drums', 'Bass', 'Lead Gitarre', 'Gesang', 'Piano']);
 
@@ -131,7 +131,7 @@ export default function App() {
       fetchResponses(),
       fetchAbsences(),
       fetchSongs(),
-      fetchSetlists(), // NEU
+      fetchSetlists(), 
       fetchFundBalance()
     ]);
   };
@@ -180,7 +180,6 @@ export default function App() {
     if (data) setSongs(data);
   };
 
-  // NEU: Holt die Vorlagen
   const fetchSetlists = async () => {
     const { data } = await supabase.from('setlists').select('*').order('title', { ascending: true });
     if (data) setSavedSetlists(data);
@@ -323,9 +322,6 @@ export default function App() {
     }
   };
 
-  // ==========================================
-  // SETLIST PLANER & VORLAGEN FUNKTIONEN
-  // ==========================================
   const openSetlistPlannerForEvent = (ev: any) => {
     setPlanningSetlistEvent(ev);
     setPlanningSetlistTemplate(null);
@@ -360,7 +356,6 @@ export default function App() {
     }
   };
 
-  // Erstellt eine ganz neue, leere Vorlage in der DB
   const handleCreateTemplate = async () => {
     const title = window.prompt('Name der Setlist-Vorlage (z.B. "Standard 2h Programm"):');
     if (!title || title.trim() === '') return;
@@ -371,7 +366,7 @@ export default function App() {
     
     if (!error && data) {
       fetchSetlists();
-      openSetlistPlannerForTemplate(data[0]); // Öffnet direkt den Planer für die neue Vorlage
+      openSetlistPlannerForTemplate(data[0]); 
     } else {
       alert('Fehler beim Erstellen der Vorlage: ' + error?.message);
     }
@@ -384,7 +379,6 @@ export default function App() {
     }
   };
 
-  // Lädt die Daten einer Vorlage in ein Event, das gerade geplant wird
   const loadTemplateIntoEvent = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const templateId = e.target.value;
     if (!templateId) return;
@@ -395,7 +389,7 @@ export default function App() {
         if (template.setlist_data.length > 0) setActiveSetId(template.setlist_data[0].id);
       }
     }
-    e.target.value = ''; // Reset select
+    e.target.value = ''; 
   };
 
   const addNewSet = () => {
@@ -489,12 +483,10 @@ export default function App() {
     doc.save(`${title.replace(/\s+/g, '_')}.pdf`);
   };
 
-  // Helfer: Gesamtdauer einer Vorlage ausrechnen für die Übersichtskarten
   const calculateTemplateDuration = (data: any[]) => {
     if (!data) return 0;
     return data.reduce((acc, set) => acc + set.songs.reduce((a:number, s:any) => a + parseDuration(s.duration), 0), 0);
   };
-  // ==========================================
 
   const isUserAbsentOnDate = (absence: any, targetDateStr: string) => {
     const target = new Date(targetDateStr);
@@ -612,6 +604,15 @@ export default function App() {
       savedEventId = data[0].id;
     }
 
+    // --- NEU: Standard-Werte im LocalStorage speichern, falls angehakt ---
+    if (saveAsDefault) {
+      localStorage.setItem('bandPortalDefaults', JSON.stringify({
+        eventType,
+        eventTime,
+        eventLocation
+      }));
+    }
+
     const blockedPeople = absences.filter(a => isUserAbsentOnDate(a, eventDate));
     for (const block of blockedPeople) {
       const existing = responses.find(r => r.event_id === savedEventId && r.user_id === block.user_id);
@@ -655,13 +656,38 @@ export default function App() {
     setEventType(ev.event_type || 'Probe');
     setEventSetlistImage(ev.setlist_image || '');
     setSetlistFile(null);
+    setSaveAsDefault(false);
     setIsAddingEvent(true); 
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  // --- NEU: Funktion zum Laden der Standardwerte ---
+  const loadDefaultsAndOpenForm = () => {
+    const defaults = localStorage.getItem('bandPortalDefaults');
+    if (defaults) {
+      const parsed = JSON.parse(defaults);
+      setEventType(parsed.eventType || 'Probe');
+      setEventTime(parsed.eventTime || '');
+      setEventLocation(parsed.eventLocation || '');
+    } else {
+      setEventType('Probe');
+      setEventTime('');
+      setEventLocation('');
+    }
+    setEventTitle('');
+    setEventDate('');
+    setEventMapsLink('');
+    setEventDescription('');
+    setEventSetlistImage('');
+    setSetlistFile(null);
+    setEditingEventId(null);
+    setSaveAsDefault(false);
+    setIsAddingEvent(true);
+  };
+
   const resetForm = () => {
     setEventTitle(''); setEventDate(''); setEventTime(''); setEventLocation(''); setEventMapsLink(''); setEventDescription('');
-    setEventType('Probe'); setEventSetlistImage(''); setSetlistFile(null); setEditingEventId(null);
+    setEventType('Probe'); setEventSetlistImage(''); setSetlistFile(null); setEditingEventId(null); setSaveAsDefault(false);
   };
 
   const handleVote = async (eventId: string, status: 'ja' | 'nein') => {
@@ -870,7 +896,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* Menü Overlay */}
           {isMenuOpen && (
             <div className="fixed inset-0 bg-gray-950/98 backdrop-blur-xl z-40 flex flex-col items-center justify-center space-y-6">
               {pushPermission !== 'granted' && (
@@ -894,7 +919,6 @@ export default function App() {
             </div>
           )}
 
-          {/* MODAL: Setlist Planner */}
           {(planningSetlistEvent || planningSetlistTemplate) && (
             <div className="fixed inset-0 bg-gray-950 z-50 overflow-hidden flex flex-col">
               <div className="p-4 border-b border-gray-800 flex justify-between items-center bg-gray-900 shrink-0 flex-wrap gap-3">
@@ -906,7 +930,6 @@ export default function App() {
                 </div>
                 
                 <div className="flex gap-2 items-center">
-                  {/* NEU: "Aus Vorlage laden" (Nur sichtbar wenn wir ein Event planen) */}
                   {planningSetlistEvent && savedSetlists.length > 0 && (
                     <select onChange={loadTemplateIntoEvent} className="bg-gray-800 border border-gray-700 text-sm text-gray-300 rounded-lg px-2 py-2 focus:outline-none cursor-pointer">
                       <option value="">Vorlagen laden...</option>
@@ -991,7 +1014,6 @@ export default function App() {
             </div>
           )}
 
-          {/* MODAL: Setlist Image */}
           {selectedSetlistImage && (
             <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center p-4">
               <div className="bg-gray-900 border border-gray-800 w-full max-w-3xl max-h-[90dvh] max-w-[95vw] rounded-2xl p-4 shadow-2xl flex flex-col overflow-hidden">
@@ -1006,7 +1028,6 @@ export default function App() {
             </div>
           )}
 
-          {/* MODAL: Song Detail */}
           {selectedSong && !planningSetlistEvent && !planningSetlistTemplate && (
             <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
               <div className="bg-gray-900 border border-gray-800 w-full max-w-2xl max-h-[90dvh] max-w-[95vw] rounded-2xl p-6 shadow-2xl flex flex-col overflow-hidden">
@@ -1065,7 +1086,6 @@ export default function App() {
             </div>
           )}
 
-          {/* MODAL: Day Detail */}
           {selectedDayDetails && (
             <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
               <div className="bg-gray-900 border border-gray-800 w-full max-w-md max-h-[90dvh] max-w-[95vw] rounded-2xl p-6 shadow-2xl flex flex-col overflow-hidden">
@@ -1103,7 +1123,6 @@ export default function App() {
             </div>
           )}
 
-          {/* VIEW: SETLISTEN (STANDALONE VORLAGEN) */}
           {currentView === 'setlisten' && !planningSetlistEvent && !planningSetlistTemplate && (
             <div className="space-y-6">
               <div className="flex justify-between items-center flex-wrap gap-3">
@@ -1144,7 +1163,6 @@ export default function App() {
             </div>
           )}
 
-          {/* VIEW: SONGS */}
           {currentView === 'songs' && !planningSetlistEvent && !planningSetlistTemplate && (
             <div className="space-y-6">
               <div className="flex justify-between items-center flex-wrap gap-3">
@@ -1232,12 +1250,11 @@ export default function App() {
             </div>
           )}
 
-          {/* VIEW: TERMINE */}
           {currentView === 'termine' && !planningSetlistEvent && !planningSetlistTemplate && (
             <div className="space-y-6">
               <div className="flex justify-between items-center">
                 <h2 className="text-lg font-bold text-gray-300">{editingEventId ? '✏️ Termin bearbeiten' : 'Terminübersicht'}</h2>
-                <button onClick={() => { if (isAddingEvent) resetForm(); setIsAddingEvent(!isAddingEvent); }} className="bg-amber-500 hover:bg-amber-600 text-gray-950 text-sm font-bold px-3 py-2 rounded-xl transition-transform active:scale-95">
+                <button onClick={() => { if (isAddingEvent) resetForm(); else loadDefaultsAndOpenForm(); }} className="bg-amber-500 hover:bg-amber-600 text-gray-950 text-sm font-bold px-3 py-2 rounded-xl transition-transform active:scale-95">
                   {isAddingEvent ? 'Schließen' : '+ Termin planen'}
                 </button>
               </div>
@@ -1304,6 +1321,13 @@ export default function App() {
                     <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Zusätzliche Infos</label>
                     <textarea value={eventDescription} onChange={(e) => setEventDescription(e.target.value)} placeholder="Infos für die Band..." rows={2} className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500 resize-none" />
                   </div>
+                  
+                  {/* NEU: Checkbox zum Speichern der Standard-Werte */}
+                  <div className="flex items-center gap-3 bg-gray-950 p-3 rounded-xl border border-gray-800">
+                    <input type="checkbox" id="saveDefaultToggle" checked={saveAsDefault} onChange={(e) => setSaveAsDefault(e.target.checked)} className="w-4 h-4 accent-amber-500 bg-gray-800 border-gray-700 rounded" />
+                    <label htmlFor="saveDefaultToggle" className="text-sm font-bold text-gray-300 cursor-pointer">Ort, Uhrzeit & Typ als Standard für neue Termine merken</label>
+                  </div>
+
                   <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[16px] rounded-xl py-2.5 transition-colors">{editingEventId ? 'Änderungen speichern' : 'Termin live veröffentlichen'}</button>
                 </form>
               )}
@@ -1338,7 +1362,14 @@ export default function App() {
                           return (
                             <div key={ev.id} className={`relative overflow-hidden bg-gray-900/40 border rounded-2xl p-4 transition-all shadow-sm ${isAllGoing ? 'border-emerald-500/50 bg-emerald-500/[0.03] shadow-[0_0_15px_rgba(16,185,129,0.15)]' : 'border-gray-800 hover:border-gray-700/70'}`}>
                               
-                              <div className="flex items-start gap-4 relative z-10">
+                              {/* NEU: DAS 'ALLE DABEI' BADGE */}
+                              {isAllGoing && (
+                                <div className="absolute top-0 right-0 bg-emerald-500 text-gray-950 text-[10px] font-black px-3 py-1 rounded-bl-xl z-20 shadow-md uppercase tracking-wider">
+                                  🔥 Alle dabei!
+                                </div>
+                              )}
+
+                              <div className="flex items-start gap-4 relative z-10 mt-2">
                                 <div className={`flex flex-col items-center justify-center bg-gray-950 border rounded-xl min-w-[64px] h-[72px] text-center p-2 shadow-inner ${isAllGoing ? 'border-emerald-500/30' : 'border-gray-800'}`}>
                                   <span className={`text-[10px] font-black tracking-wider uppercase leading-none ${isAllGoing ? 'text-emerald-400' : 'text-amber-500'}`}>{dayName}</span>
                                   <span className="text-2xl font-black text-white my-0.5 leading-none">{dayNum}</span>
