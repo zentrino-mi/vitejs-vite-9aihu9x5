@@ -45,8 +45,10 @@ export default function App() {
   const [songSearchQuery, setSongSearchQuery] = useState('');
   const [selectedSong, setSelectedSong] = useState<any | null>(null);
   const [isAddingSong, setIsAddingSong] = useState(false);
+  const [editingSongId, setEditingSongId] = useState<string | null>(null); 
   const [songTitle, setSongTitle] = useState('');
   const [songArtist, setSongArtist] = useState('');
+  const [songDuration, setSongDuration] = useState(''); // NEU: Dauer
   const [songLyrics, setSongLyrics] = useState('');
   const [songChords, setSongChords] = useState('');
   const [songTabLink, setSongTabLink] = useState('');
@@ -71,13 +73,20 @@ export default function App() {
   const [eventDate, setEventDate] = useState('');
   const [eventTime, setEventTime] = useState('');
   const [eventLocation, setEventLocation] = useState('');
-  const [eventMapsLink, setEventMapsLink] = useState(''); // NEU: Maps Link State
+  const [eventMapsLink, setEventMapsLink] = useState(''); // NEU: Maps Link
   const [eventDescription, setEventDescription] = useState('');
   const [eventType, setEventType] = useState<'Probe' | 'Auftritt' | 'Band-Event'>('Probe');
   
   // Setlist Upload States
   const [eventSetlistImage, setEventSetlistImage] = useState(''); 
   const [setlistFile, setSetlistFile] = useState<File | null>(null); 
+
+  // --- NEU: Setlist Planer States ---
+  const [planningSetlistEvent, setPlanningSetlistEvent] = useState<any | null>(null);
+  const [setlistData, setSetlistData] = useState<any[]>([]);
+  const [activeSetId, setActiveSetId] = useState<string | null>(null);
+  const [setlistSearchQuery, setSetlistSearchQuery] = useState('');
+  // ----------------------------------
 
   // Instrumente-Verwaltung States
   const [instruments, setInstruments] = useState<string[]>(['Drums', 'Bass', 'Lead Gitarre', 'Gesang', 'Piano']);
@@ -228,34 +237,82 @@ export default function App() {
     setGeneratedPdfPreviewUrl(pdfBlobUrl.toString());
   };
 
-  // --- ANPASSUNG: Jeder darf jetzt Songs hinzufügen ---
+  // --- NEU: Zeit Berechnungen ---
+  const parseDuration = (dur: string) => {
+    if (!dur) return 0;
+    const parts = dur.split(':');
+    return (parseInt(parts[0]) || 0) * 60 + (parseInt(parts[1]) || 0);
+  };
+
+  const formatDuration = (totalSecs: number) => {
+    const m = Math.floor(totalSecs / 60);
+    const s = totalSecs % 60;
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
+  // --- ANPASSUNG: Jeder darf jetzt Songs hinzufügen & Admin darf bearbeiten ---
   const handleAddSong = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Die Sperre wurde hier entfernt! Jeder darf eintragen.
+    
+    const songDataObj = {
+      title: songTitle,
+      artist: songArtist,
+      duration: songDuration, 
+      lyrics: songLyrics,
+      chords: songChords,
+      tab_link: songTabLink,
+      pdf_url: songPdfUrl
+    };
 
-    const { error } = await supabase.from('songs').insert([
-      {
-        title: songTitle,
-        artist: songArtist,
-        lyrics: songLyrics,
-        chords: songChords,
-        tab_link: songTabLink,
-        pdf_url: songPdfUrl,
-        created_by: session.user.id
+    if (editingSongId) {
+      const { error } = await supabase.from('songs').update(songDataObj).eq('id', editingSongId);
+      if (error) {
+        alert('Fehler beim Bearbeiten: ' + error.message);
+      } else {
+        resetSongForm();
+        fetchSongs();
       }
-    ]);
-
-    if (!error) {
-      setSongTitle(''); setSongArtist(''); setSongLyrics(''); setSongChords('');
-      setSongTabLink(''); setSongPdfUrl(''); setIsAddingSong(false);
-      fetchSongs();
     } else {
-      alert('Fehler beim Speichern des Songs: ' + error.message);
+      const { error } = await supabase.from('songs').insert([
+        { ...songDataObj, created_by: session.user.id }
+      ]);
+      if (error) {
+        alert('Fehler beim Speichern des Songs: ' + error.message);
+      } else {
+        resetSongForm();
+        fetchSongs();
+      }
     }
   };
 
+  const startEditSong = (s: any) => {
+    setEditingSongId(s.id); 
+    setSongTitle(s.title); 
+    setSongArtist(s.artist || ''); 
+    setSongDuration(s.duration || '');
+    setSongLyrics(s.lyrics || ''); 
+    setSongChords(s.chords || ''); 
+    setSongTabLink(s.tab_link || ''); 
+    setSongPdfUrl(s.pdf_url || '');
+    setIsAddingSong(true); 
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setSelectedSong(null);
+  };
+
+  const resetSongForm = () => {
+    setEditingSongId(null); 
+    setSongTitle(''); 
+    setSongArtist(''); 
+    setSongDuration(''); 
+    setSongLyrics(''); 
+    setSongChords('');
+    setSongTabLink(''); 
+    setSongPdfUrl(''); 
+    setIsAddingSong(false);
+  };
+
   const handleDeleteSong = async (songId: string) => {
-    if (!myProfile.can_manage_events && !myProfile.is_admin) return; // Löschen bleibt beim Admin!
+    if (!myProfile.can_manage_events && !myProfile.is_admin) return;
     if (confirm('Bist du sicher, dass du diesen Song löschen möchtest?')) {
       const { error } = await supabase.from('songs').delete().eq('id', songId);
       if (!error) {
@@ -267,6 +324,120 @@ export default function App() {
       }
     }
   };
+
+  // --- NEU: Setlist Planer Funktionen ---
+  const openSetlistPlanner = (ev: any) => {
+    setPlanningSetlistEvent(ev);
+    const existingData = ev.setlist_data || [{ id: 'set-1', name: 'Set 1', songs: [] }];
+    setSetlistData(existingData);
+    setActiveSetId(existingData[0].id);
+  };
+
+  const closeSetlistPlanner = () => { 
+    setPlanningSetlistEvent(null); 
+    setSetlistData([]); 
+  };
+
+  const handleSaveSetlist = async () => {
+    const { error } = await supabase.from('events').update({ setlist_data: setlistData }).eq('id', planningSetlistEvent.id);
+    if (error) {
+      alert('Fehler beim Speichern der Setlist: ' + error.message);
+    } else {
+      alert('Setlist erfolgreich gespeichert!');
+      fetchEvents();
+    }
+  };
+
+  const addNewSet = () => {
+    const newId = `set-${Date.now()}`;
+    const newName = window.prompt('Wie soll das Set heißen? (z.B. Zugabe)');
+    if (newName && newName.trim() !== '') {
+      setSetlistData([...setlistData, { id: newId, name: newName, songs: [] }]);
+      setActiveSetId(newId);
+    }
+  };
+
+  const deleteSet = (setId: string) => {
+    if (confirm('Soll dieses Set wirklich gelöscht werden?')) {
+      const newData = setlistData.filter(s => s.id !== setId);
+      setSetlistData(newData);
+      if (activeSetId === setId && newData.length > 0) setActiveSetId(newData[0].id);
+    }
+  };
+
+  const addSongToActiveSet = (song: any) => {
+    if (!activeSetId) return alert('Bitte lege zuerst ein Set an oder wähle eins aus!');
+    const setIndex = setlistData.findIndex(s => s.id === activeSetId);
+    const newData = [...setlistData];
+    newData[setIndex].songs.push({ id: song.id, title: song.title, artist: song.artist, duration: song.duration });
+    setSetlistData(newData);
+  };
+
+  const removeSongFromSet = (setId: string, songIndex: number) => {
+    const setIndex = setlistData.findIndex(s => s.id === setId);
+    const newData = [...setlistData];
+    newData[setIndex].songs.splice(songIndex, 1);
+    setSetlistData(newData);
+  };
+
+  const moveSongInSet = (setId: string, songIndex: number, direction: 'up' | 'down') => {
+    const setIndex = setlistData.findIndex(s => s.id === setId);
+    const newData = [...setlistData];
+    const songsList = newData[setIndex].songs;
+    
+    if (direction === 'up' && songIndex > 0) {
+      [songsList[songIndex - 1], songsList[songIndex]] = [songsList[songIndex], songsList[songIndex - 1]];
+    } else if (direction === 'down' && songIndex < songsList.length - 1) {
+      [songsList[songIndex + 1], songsList[songIndex]] = [songsList[songIndex], songsList[songIndex + 1]];
+    }
+    setSetlistData(newData);
+  };
+
+  const exportSetlistPdf = () => {
+    const doc = new jsPDF();
+    doc.setFontSize(22);
+    doc.setTextColor(0, 0, 0);
+    doc.text(`Setlist: ${planningSetlistEvent.title}`, 10, 20);
+    
+    let y = 35;
+    let totalSecs = 0;
+
+    setlistData.forEach(set => {
+      doc.setFontSize(16);
+      doc.setFont("helvetica", "bold");
+      doc.text(set.name, 10, y);
+      y += 10;
+      
+      let setSecs = 0;
+      doc.setFont("helvetica", "normal");
+      
+      set.songs.forEach((s: any, idx: number) => {
+        doc.setFontSize(14);
+        doc.text(`${idx + 1}. ${s.title} ${s.artist ? `(${s.artist})` : ''}`, 15, y);
+        
+        if (s.duration) {
+          doc.text(s.duration, 180, y, { align: 'right' });
+          setSecs += parseDuration(s.duration);
+        }
+        y += 8;
+      });
+
+      totalSecs += setSecs;
+      doc.setFontSize(12);
+      doc.setFont("helvetica", "italic");
+      doc.text(`Dauer ${set.name}: ${formatDuration(setSecs)} Min.`, 15, y + 2);
+      y += 15;
+
+      if (y > 270) { doc.addPage(); y = 20; }
+    });
+
+    doc.setFontSize(16);
+    doc.setFont("helvetica", "bold");
+    doc.text(`Gesamte Spielzeit: ${formatDuration(totalSecs)} Min.`, 10, y + 10);
+    
+    doc.save(`Setlist_${planningSetlistEvent.title.replace(/\s+/g, '_')}.pdf`);
+  };
+  // ----------------------------------
 
   const isUserAbsentOnDate = (absence: any, targetDateStr: string) => {
     const target = new Date(targetDateStr);
@@ -324,6 +495,18 @@ export default function App() {
     }
   };
 
+  const handleDeleteAbsence = async (absenceId: string) => {
+    if (confirm('Möchtest du diese Abwesenheit wirklich löschen?')) {
+      const { error } = await supabase.from('user_absences').delete().eq('id', absenceId);
+      if (!error) {
+        setAbsences(prev => prev.filter(a => a.id !== absenceId));
+      } else {
+        alert('Fehler beim Löschen: ' + error.message);
+      }
+    }
+  };
+
+  // --- ANPASSUNG: Jeder darf jetzt Termine speichern ---
   const handleSaveEvent = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -438,7 +621,7 @@ export default function App() {
   const toggleApprove = async (id: string, currentStatus: boolean) => {
     const { error } = await supabase.from('profiles').update({ is_approved: !currentStatus }).eq('id', id);
     if (error) {
-      alert('⚠️ Fehler beim Verifizieren:\n\nDie Datenbank blockiert diese Aktion (' + error.message + ').\n\nHast du den SQL-Befehl im Supabase Dashboard ausgeführt?');
+      alert('⚠️ Fehler beim Verifizieren:\n\nDie Datenbank blockiert diese Aktion (' + error.message + ').');
     } else {
       fetchAllProfiles();
     }
@@ -587,6 +770,11 @@ export default function App() {
     (s.artist && s.artist.toLowerCase().includes(songSearchQuery.toLowerCase()))
   );
 
+  const setlistPlannerSongs = songs.filter(s => 
+    s.title.toLowerCase().includes(setlistSearchQuery.toLowerCase()) || 
+    (s.artist && s.artist.toLowerCase().includes(setlistSearchQuery.toLowerCase()))
+  );
+
   const myOwnAbsences = absences.filter(a => a.user_id === session?.user?.id);
   const pendingRequests = allProfiles.filter(p => !p.is_approved && !p.is_admin);
   const pendingCount = pendingRequests.length;
@@ -609,6 +797,9 @@ export default function App() {
   const groupedEvents = getGroupedEventsByMonth();
   const weekDays = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
 
+  // ==========================================
+  // HAUPT-ANSICHT (WENN EINGELOGGT)
+  // ==========================================
   if (session && myProfile) {
     return (
       <div className="min-h-[100dvh] w-full bg-gray-950 text-gray-100 font-sans relative overflow-x-hidden selection:bg-amber-500 selection:text-black m-0 p-0">
@@ -635,6 +826,7 @@ export default function App() {
             </div>
           </div>
 
+          {/* Menü Overlay */}
           {isMenuOpen && (
             <div className="fixed inset-0 bg-gray-950/98 backdrop-blur-xl z-40 flex flex-col items-center justify-center space-y-6">
               {pushPermission !== 'granted' && (
@@ -657,6 +849,92 @@ export default function App() {
             </div>
           )}
 
+          {/* MODAL: Setlist Planner */}
+          {planningSetlistEvent && (
+            <div className="fixed inset-0 bg-gray-950 z-50 overflow-hidden flex flex-col">
+              <div className="p-4 border-b border-gray-800 flex justify-between items-center bg-gray-900 shrink-0">
+                <div>
+                  <h2 className="font-black text-amber-500">Setlist: {planningSetlistEvent.title}</h2>
+                  <p className="text-[12px] text-gray-400">Drag & Drop per Pfeil-Buttons</p>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={handleSaveSetlist} className="bg-emerald-600 font-bold text-white px-4 py-2 rounded-lg text-sm">💾 Speichern</button>
+                  <button onClick={closeSetlistPlanner} className="bg-gray-800 text-gray-300 font-bold px-4 py-2 rounded-lg text-sm border border-gray-700">X</button>
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
+                <div className="w-full md:w-1/3 bg-gray-900/50 border-r border-gray-800 flex flex-col">
+                  <div className="p-4 border-b border-gray-800">
+                    <input type="text" value={setlistSearchQuery} onChange={(e) => setSetlistSearchQuery(e.target.value)} placeholder="🔍 Song suchen..." className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-sm text-white" />
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-2 space-y-1">
+                    {setlistPlannerSongs.map(song => (
+                      <div key={song.id} className="bg-gray-950 border border-gray-800 p-2 rounded-lg flex justify-between items-center group">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-bold text-gray-200 truncate">{song.title}</p>
+                          <p className="text-[10px] text-gray-500">{song.duration ? `⏱ ${song.duration}` : 'Keine Zeit'}</p>
+                        </div>
+                        <button onClick={() => addSongToActiveSet(song)} className="ml-2 bg-amber-500/10 text-amber-500 border border-amber-500/20 px-2 py-1 rounded text-[12px] font-bold shrink-0 hover:bg-amber-500 hover:text-gray-950 transition-colors">
+                          + Hinzufügen
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="w-full md:w-2/3 flex-1 overflow-y-auto p-4 bg-gray-950 space-y-6">
+                  <div className="flex gap-2 flex-wrap mb-4">
+                    <button onClick={addNewSet} className="bg-gray-800 text-gray-300 px-3 py-1.5 rounded-lg text-sm font-bold border border-gray-700 hover:bg-gray-700">+ Neues Set</button>
+                    <button onClick={exportSetlistPdf} className="bg-blue-500/10 text-blue-400 px-3 py-1.5 rounded-lg text-sm font-bold border border-blue-500/30 hover:bg-blue-500/20">📄 PDF Export</button>
+                  </div>
+
+                  {setlistData.map(set => {
+                    const isActive = activeSetId === set.id;
+                    const setTotalSecs = set.songs.reduce((acc: number, s: any) => acc + parseDuration(s.duration), 0);
+
+                    return (
+                      <div key={set.id} onClick={() => setActiveSetId(set.id)} className={`p-4 rounded-xl border-2 transition-colors ${isActive ? 'border-amber-500 bg-amber-500/[0.02]' : 'border-gray-800 bg-gray-900/40 cursor-pointer'}`}>
+                        <div className="flex justify-between items-center mb-4 border-b border-gray-800/50 pb-2">
+                          <h3 className="font-black text-lg text-white flex items-center gap-2">
+                            {isActive && <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse"></span>}
+                            {set.name}
+                          </h3>
+                          <div className="flex gap-3 items-center">
+                            <span className="text-sm font-bold text-gray-400">Dauer: <span className="text-amber-400">{formatDuration(setTotalSecs)} Min</span></span>
+                            <button onClick={(e) => { e.stopPropagation(); deleteSet(set.id); }} className="text-red-400 text-[12px] bg-red-500/10 px-2 py-1 rounded">Löschen</button>
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          {set.songs.length === 0 && <p className="text-sm text-gray-600 italic pb-2">Set ist leer. Wähle links einen Song aus (+).</p>}
+                          {set.songs.map((song: any, index: number) => (
+                            <div key={`${song.id}-${index}`} className="flex items-center gap-2 bg-gray-950 border border-gray-800 p-2 rounded-lg">
+                              <span className="text-gray-500 font-black text-sm w-5 text-right">{index + 1}.</span>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-bold text-gray-200 truncate">{song.title}</p>
+                              </div>
+                              <span className="text-[12px] font-mono text-gray-400 mx-2">{song.duration || '--:--'}</span>
+                              <div className="flex flex-col gap-0.5">
+                                <button disabled={index === 0} onClick={(e) => { e.stopPropagation(); moveSongInSet(set.id, index, 'up'); }} className="text-gray-400 hover:text-white disabled:opacity-30 p-0.5 leading-none">▲</button>
+                                <button disabled={index === set.songs.length - 1} onClick={(e) => { e.stopPropagation(); moveSongInSet(set.id, index, 'down'); }} className="text-gray-400 hover:text-white disabled:opacity-30 p-0.5 leading-none">▼</button>
+                              </div>
+                              <button onClick={(e) => { e.stopPropagation(); removeSongFromSet(set.id, index); }} className="text-red-500 font-black ml-2 px-2 hover:scale-110">✕</button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div className="pt-4 mt-4 border-t border-gray-800 text-right">
+                    <p className="font-black text-gray-300">Gesamte Spielzeit: <span className="text-amber-500 text-xl">{formatDuration(setlistData.reduce((acc, set) => acc + set.songs.reduce((a:number, s:any) => a + parseDuration(s.duration), 0), 0))} Min</span></p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* MODAL: Setlist Image */}
           {selectedSetlistImage && (
             <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center p-4">
               <div className="bg-gray-900 border border-gray-800 w-full max-w-3xl max-h-[90dvh] max-w-[95vw] rounded-2xl p-4 shadow-2xl flex flex-col overflow-hidden">
@@ -671,7 +949,8 @@ export default function App() {
             </div>
           )}
 
-          {selectedSong && (
+          {/* MODAL: Song Detail */}
+          {selectedSong && !planningSetlistEvent && (
             <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
               <div className="bg-gray-900 border border-gray-800 w-full max-w-2xl max-h-[90dvh] max-w-[95vw] rounded-2xl p-6 shadow-2xl flex flex-col overflow-hidden">
                 <div className="flex justify-between items-start border-b border-gray-800 pb-3 mb-4 shrink-0">
@@ -725,16 +1004,11 @@ export default function App() {
                     )}
                   </div>
                 </div>
-
-                {(myProfile.can_manage_events || myProfile.is_admin) && (
-                  <div className="pt-4 mt-2 border-t border-gray-800 flex justify-end shrink-0">
-                    <button onClick={() => handleDeleteSong(selectedSong.id)} className="text-sm bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 font-bold px-3 py-2 rounded-xl transition-colors">🗑️ Song löschen</button>
-                  </div>
-                )}
               </div>
             </div>
           )}
 
+          {/* MODAL: Day Detail */}
           {selectedDayDetails && (
             <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
               <div className="bg-gray-900 border border-gray-800 w-full max-w-md max-h-[90dvh] max-w-[95vw] rounded-2xl p-6 shadow-2xl flex flex-col overflow-hidden">
@@ -772,26 +1046,31 @@ export default function App() {
             </div>
           )}
 
-          {currentView === 'songs' && (
+          {/* VIEW: SONGS */}
+          {currentView === 'songs' && !planningSetlistEvent && (
             <div className="space-y-6">
               <div className="flex justify-between items-center flex-wrap gap-3">
                 <h2 className="text-lg font-bold text-gray-300">🎵 Song-Repertoire ({songs.length})</h2>
-                {/* ANPASSUNG: Der Button ist jetzt für alle sichtbar */}
-                <button onClick={() => setIsAddingSong(!isAddingSong)} className="bg-amber-500 hover:bg-amber-600 text-gray-950 text-sm font-bold px-3 py-2 rounded-xl transition-transform active:scale-95">
+                <button onClick={() => { if(isAddingSong) resetSongForm(); else setIsAddingSong(true); }} className="bg-amber-500 hover:bg-amber-600 text-gray-950 text-sm font-bold px-3 py-2 rounded-xl transition-transform active:scale-95">
                   {isAddingSong ? 'Schließen' : '+ Song hinzufügen'}
                 </button>
               </div>
 
               {isAddingSong && (
                 <form onSubmit={handleAddSong} className="bg-gray-900/90 border border-amber-500/20 p-5 rounded-2xl space-y-4 shadow-lg">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <h3 className="font-bold text-amber-500 text-sm uppercase mb-2">{editingSongId ? '✏️ Song bearbeiten' : '➕ Neuen Song anlegen'}</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div>
                       <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Songtitel</label>
                       <input type="text" value={songTitle} onChange={(e) => setSongTitle(e.target.value)} placeholder="z.B. Knockin' on Heaven's Door" className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500" required />
                     </div>
                     <div>
-                      <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Künstler / Interpret</label>
+                      <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Interpret</label>
                       <input type="text" value={songArtist} onChange={(e) => setSongArtist(e.target.value)} placeholder="z.B. Bob Dylan" className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500" />
+                    </div>
+                    <div>
+                      <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Dauer (MM:SS)</label>
+                      <input type="text" value={songDuration} onChange={(e) => setSongDuration(e.target.value)} placeholder="03:25" pattern="[0-9]{1,2}:[0-5][0-9]" title="Bitte im Format MM:SS eingeben (z.B. 03:25)" className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500 font-mono" />
                     </div>
                   </div>
                   
@@ -801,7 +1080,7 @@ export default function App() {
                       <input type="url" value={songTabLink} onChange={(e) => setSongTabLink(e.target.value)} placeholder="https://www.ultimate-guitar.com/..." className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500" />
                     </div>
                     <div>
-                      <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Link zum PDF (z.B. Google Drive)</label>
+                      <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Link zum PDF</label>
                       <input type="url" value={songPdfUrl} onChange={(e) => setSongPdfUrl(e.target.value)} placeholder="https://..." className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500" />
                     </div>
                   </div>
@@ -816,7 +1095,7 @@ export default function App() {
                       <textarea value={songLyrics} onChange={(e) => setSongLyrics(e.target.value)} placeholder="Strophe 1..." rows={4} className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500 resize-none" />
                     </div>
                   </div>
-                  <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[16px] rounded-xl py-2.5 transition-colors">Song speichern</button>
+                  <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[16px] rounded-xl py-2.5 transition-colors">{editingSongId ? 'Änderungen speichern' : 'Song speichern'}</button>
                 </form>
               )}
 
@@ -829,22 +1108,25 @@ export default function App() {
                   <p className="text-sm text-gray-500 italic col-span-2">Keine Songs gefunden.</p>
                 ) : (
                   filteredSongs.map(song => (
-                    <div key={song.id} onClick={() => setSelectedSong(song)} className="bg-gray-900/40 border border-gray-800 hover:border-gray-700 p-4 rounded-xl cursor-pointer transition-all shadow-sm flex flex-col justify-between group">
-                      <div>
+                    <div key={song.id} className="bg-gray-900/40 border border-gray-800 hover:border-gray-700 p-4 rounded-xl transition-all shadow-sm flex flex-col justify-between group">
+                      <div onClick={() => setSelectedSong(song)} className="cursor-pointer">
                         <div className="flex justify-between items-start">
                           <h3 className="text-[16px] font-bold text-gray-100 group-hover:text-amber-400 transition-colors">{song.title}</h3>
-                          <div className="flex gap-1">
-                            {song.tab_link && <span className="text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-1.5 py-0.5 rounded font-bold">Tabs 🎸</span>}
-                            {song.pdf_url && <span className="text-[10px] bg-red-500/10 text-red-400 border border-red-500/20 px-1.5 py-0.5 rounded font-bold">PDF 📄</span>}
+                          <div className="flex gap-1 text-[10px] font-bold">
+                            {song.duration && <span className="bg-gray-800 text-gray-300 px-1.5 py-0.5 rounded font-mono">⏱ {song.duration}</span>}
+                            {song.tab_link && <span className="bg-blue-500/10 text-blue-400 border border-blue-500/20 px-1.5 py-0.5 rounded">Tabs 🎸</span>}
+                            {song.pdf_url && <span className="bg-red-500/10 text-red-400 border border-red-500/20 px-1.5 py-0.5 rounded">PDF 📄</span>}
                           </div>
                         </div>
                         <p className="text-sm text-gray-400 mt-0.5">{song.artist || 'Unbekannter Interpret'}</p>
                       </div>
                       
-                      <div className="mt-3 pt-2 border-t border-gray-800/60 flex items-center justify-between text-[12px] text-gray-500">
-                        <span>{song.chords ? '🎛️ Akkorde vorhanden' : 'Keine Akkorde'}</span>
-                        <span className="text-amber-500 font-bold">Ansehen &rarr;</span>
-                      </div>
+                      {(myProfile.can_manage_events || myProfile.is_admin) && (
+                         <div className="mt-3 pt-2 border-t border-gray-800/60 flex justify-end gap-2">
+                           <button onClick={() => startEditSong(song)} className="text-[12px] bg-gray-800 text-gray-300 px-2.5 py-1 rounded hover:bg-gray-700">✏️ Bearbeiten</button>
+                           <button onClick={() => handleDeleteSong(song.id)} className="text-[12px] bg-red-500/10 text-red-400 px-2.5 py-1 rounded hover:bg-red-500/20">🗑️ Löschen</button>
+                         </div>
+                      )}
                     </div>
                   ))
                 )}
@@ -852,7 +1134,8 @@ export default function App() {
             </div>
           )}
 
-          {currentView === 'termine' && (
+          {/* VIEW: TERMINE */}
+          {currentView === 'termine' && !planningSetlistEvent && (
             <div className="space-y-6">
               <div className="flex justify-between items-center">
                 <h2 className="text-lg font-bold text-gray-300">{editingEventId ? '✏️ Termin bearbeiten' : 'Terminübersicht'}</h2>
@@ -986,7 +1269,14 @@ export default function App() {
 
                                   <div className="mt-2.5 flex gap-2">
                                     <button type="button" onClick={() => startEditEvent(ev)} className="text-[12px] text-gray-400 hover:text-white bg-gray-950 border border-gray-800 px-2.5 py-1 rounded-lg transition-colors">✏️ Bearbeiten</button>
-                                    <button type="button" onClick={() => handleDeleteEvent(ev.id)} className="text-[12px] text-red-400 hover:text-red-350 bg-red-500/10 border border-red-500/20 px-2.5 py-1 rounded-lg transition-colors">🗑️ Termin löschen</button>
+                                    
+                                    {ev.event_type === 'Auftritt' && (
+                                      <button type="button" onClick={() => openSetlistPlanner(ev)} className="text-[12px] bg-amber-500/10 border border-amber-500/20 text-amber-500 font-bold px-2.5 py-1 rounded-lg hover:bg-amber-500/20 transition-colors">
+                                        📋 Setlist planen
+                                      </button>
+                                    )}
+
+                                    <button type="button" onClick={() => handleDeleteEvent(ev.id)} className="text-[12px] text-red-400 hover:text-red-350 bg-red-500/10 border border-red-500/20 px-2.5 py-1 rounded-lg transition-colors">🗑️ Löschen</button>
                                   </div>
                                 </div>
 
@@ -1053,6 +1343,7 @@ export default function App() {
             </div>
           )}
 
+          {/* VIEW: KALENDER */}
           {currentView === 'kalender' && (
             <div className="space-y-6">
               <div className="flex items-center justify-between bg-gray-900 border border-gray-800 p-4 rounded-2xl shadow-sm">
@@ -1178,6 +1469,7 @@ export default function App() {
             </div>
           )}
 
+          {/* VIEW: VERWALTUNG */}
           {currentView === 'verwaltung' && myProfile.is_admin && (
             <div className="bg-gray-900/60 border border-gray-800 p-6 rounded-2xl shadow-sm">
               <div className="flex justify-between items-center mb-4">
@@ -1247,6 +1539,7 @@ export default function App() {
             </div>
           )}
 
+          {/* VIEW: BANDKASSE */}
           {currentView === 'bandkasse' && (
             <div className="space-y-6">
               <h2 className="text-lg font-bold text-gray-300">💰 Bandkasse</h2>
@@ -1288,6 +1581,9 @@ export default function App() {
     );
   }
 
+  // ==========================================
+  // LOGIN / REGISTRIEREN ANSICHT (NICHT EINGELOGGT)
+  // ==========================================
   return (
     <div className="min-h-[100dvh] w-full bg-gray-950 text-gray-100 flex flex-col justify-between p-6 font-sans m-0">
       <div className="flex flex-col items-center mt-8">
