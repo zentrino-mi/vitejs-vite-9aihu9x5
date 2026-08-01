@@ -16,21 +16,18 @@ export default function App() {
   const [myProfile, setMyProfile] = useState<any>(null);
   const [allProfiles, setAllProfiles] = useState<any[]>([]);
 
-  // Push-Benachrichtigungen Status
   const [pushPermission, setPushPermission] = useState<NotificationPermission | 'default'>('default');
 
-  // Navigation & Ansichten
-  const [currentView, setCurrentView] = useState<'termine' | 'kalender' | 'verwaltung' | 'bandkasse' | 'songs'>('termine'); 
+  // NEU: Navigation wurde um 'setlisten' erweitert
+  const [currentView, setCurrentView] = useState<'termine' | 'kalender' | 'verwaltung' | 'bandkasse' | 'songs' | 'setlisten'>('termine'); 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [activeFilter, setActiveFilter] = useState<'all' | 'Probe' | 'Auftritt' | 'Band-Event'>('all');
 
-  // Termine & Abstimmungen
   const [events, setEvents] = useState<any[]>([]);
   const [responses, setResponses] = useState<any[]>([]);
   const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
   const [selectedSetlistImage, setSelectedSetlistImage] = useState<string | null>(null); 
   
-  // Abwesenheiten States
   const [absences, setAbsences] = useState<any[]>([]);
   const [absenceStartDate, setAbsenceStartDate] = useState('');
   const [absenceEndDate, setAbsenceEndDate] = useState('');
@@ -40,7 +37,6 @@ export default function App() {
   const [absenceCategory, setAbsenceCategory] = useState<'Urlaub' | 'Termin' | 'Arbeit' | 'Schule'>('Urlaub');
   const [absenceNotes, setAbsenceNotes] = useState('');
 
-  // Songs States
   const [songs, setSongs] = useState<any[]>([]);
   const [songSearchQuery, setSongSearchQuery] = useState('');
   const [selectedSong, setSelectedSong] = useState<any | null>(null);
@@ -48,24 +44,19 @@ export default function App() {
   const [editingSongId, setEditingSongId] = useState<string | null>(null); 
   const [songTitle, setSongTitle] = useState('');
   const [songArtist, setSongArtist] = useState('');
-  const [songDuration, setSongDuration] = useState(''); // NEU: Dauer
+  const [songDuration, setSongDuration] = useState(''); 
   const [songLyrics, setSongLyrics] = useState('');
   const [songChords, setSongChords] = useState('');
   const [songTabLink, setSongTabLink] = useState('');
   const [songPdfUrl, setSongPdfUrl] = useState('');
   const [generatedPdfPreviewUrl, setGeneratedPdfPreviewUrl] = useState<string | null>(null); 
 
-  // Bandkasse States
   const [fundBalance, setFundBalance] = useState<number>(0);
   const [newBalanceInput, setNewBalanceInput] = useState<string>('');
 
-  // Kalender-Monats-Slider
   const [currentCalendarDate, setCurrentCalendarDate] = useState(new Date());
-  
-  // State für das Tagesdetail-Fenster (Modal)
   const [selectedDayDetails, setSelectedDayDetails] = useState<{ dayLabel: string; events: any[]; absences: any[] } | null>(null);
 
-  // Formular-Zustände für Events
   const [isAddingEvent, setIsAddingEvent] = useState(false);
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
   
@@ -73,22 +64,23 @@ export default function App() {
   const [eventDate, setEventDate] = useState('');
   const [eventTime, setEventTime] = useState('');
   const [eventLocation, setEventLocation] = useState('');
-  const [eventMapsLink, setEventMapsLink] = useState(''); // NEU: Maps Link
+  const [eventMapsLink, setEventMapsLink] = useState(''); 
   const [eventDescription, setEventDescription] = useState('');
   const [eventType, setEventType] = useState<'Probe' | 'Auftritt' | 'Band-Event'>('Probe');
   
-  // Setlist Upload States
   const [eventSetlistImage, setEventSetlistImage] = useState(''); 
   const [setlistFile, setSetlistFile] = useState<File | null>(null); 
 
-  // --- NEU: Setlist Planer States ---
-  const [planningSetlistEvent, setPlanningSetlistEvent] = useState<any | null>(null);
+  // --- Setlist Planer & Vorlagen States ---
+  const [savedSetlists, setSavedSetlists] = useState<any[]>([]); // Die Vorlagen
+  const [planningSetlistEvent, setPlanningSetlistEvent] = useState<any | null>(null); // Wenn man für ein Event plant
+  const [planningSetlistTemplate, setPlanningSetlistTemplate] = useState<any | null>(null); // Wenn man eine Vorlage plant
+  
   const [setlistData, setSetlistData] = useState<any[]>([]);
   const [activeSetId, setActiveSetId] = useState<string | null>(null);
   const [setlistSearchQuery, setSetlistSearchQuery] = useState('');
   // ----------------------------------
 
-  // Instrumente-Verwaltung States
   const [instruments, setInstruments] = useState<string[]>(['Drums', 'Bass', 'Lead Gitarre', 'Gesang', 'Piano']);
 
   useEffect(() => {
@@ -117,6 +109,7 @@ export default function App() {
         setEvents([]);
         setAbsences([]);
         setSongs([]);
+        setSavedSetlists([]);
         setCurrentView('termine');
         setIsLoading(false);
       }
@@ -138,6 +131,7 @@ export default function App() {
       fetchResponses(),
       fetchAbsences(),
       fetchSongs(),
+      fetchSetlists(), // NEU
       fetchFundBalance()
     ]);
   };
@@ -184,6 +178,12 @@ export default function App() {
   const fetchSongs = async () => {
     const { data } = await supabase.from('songs').select('*').order('title', { ascending: true });
     if (data) setSongs(data);
+  };
+
+  // NEU: Holt die Vorlagen
+  const fetchSetlists = async () => {
+    const { data } = await supabase.from('setlists').select('*').order('title', { ascending: true });
+    if (data) setSavedSetlists(data);
   };
 
   const fetchFundBalance = async () => {
@@ -237,7 +237,6 @@ export default function App() {
     setGeneratedPdfPreviewUrl(pdfBlobUrl.toString());
   };
 
-  // --- NEU: Zeit Berechnungen ---
   const parseDuration = (dur: string) => {
     if (!dur) return 0;
     const parts = dur.split(':');
@@ -250,7 +249,6 @@ export default function App() {
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
-  // --- ANPASSUNG: Jeder darf jetzt Songs hinzufügen & Admin darf bearbeiten ---
   const handleAddSong = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -325,27 +323,79 @@ export default function App() {
     }
   };
 
-  // --- NEU: Setlist Planer Funktionen ---
-  const openSetlistPlanner = (ev: any) => {
+  // ==========================================
+  // SETLIST PLANER & VORLAGEN FUNKTIONEN
+  // ==========================================
+  const openSetlistPlannerForEvent = (ev: any) => {
     setPlanningSetlistEvent(ev);
+    setPlanningSetlistTemplate(null);
     const existingData = ev.setlist_data || [{ id: 'set-1', name: 'Set 1', songs: [] }];
+    setSetlistData(existingData);
+    setActiveSetId(existingData[0].id);
+  };
+
+  const openSetlistPlannerForTemplate = (template: any) => {
+    setPlanningSetlistTemplate(template);
+    setPlanningSetlistEvent(null);
+    const existingData = template.setlist_data || [{ id: 'set-1', name: 'Set 1', songs: [] }];
     setSetlistData(existingData);
     setActiveSetId(existingData[0].id);
   };
 
   const closeSetlistPlanner = () => { 
     setPlanningSetlistEvent(null); 
+    setPlanningSetlistTemplate(null);
     setSetlistData([]); 
   };
 
   const handleSaveSetlist = async () => {
-    const { error } = await supabase.from('events').update({ setlist_data: setlistData }).eq('id', planningSetlistEvent.id);
-    if (error) {
-      alert('Fehler beim Speichern der Setlist: ' + error.message);
-    } else {
-      alert('Setlist erfolgreich gespeichert!');
-      fetchEvents();
+    if (planningSetlistEvent) {
+      const { error } = await supabase.from('events').update({ setlist_data: setlistData }).eq('id', planningSetlistEvent.id);
+      if (error) alert('Fehler beim Speichern der Setlist: ' + error.message);
+      else { alert('Setlist gespeichert!'); fetchEvents(); }
+    } else if (planningSetlistTemplate) {
+      const { error } = await supabase.from('setlists').update({ setlist_data: setlistData }).eq('id', planningSetlistTemplate.id);
+      if (error) alert('Fehler beim Speichern der Vorlage: ' + error.message);
+      else { alert('Vorlage gespeichert!'); fetchSetlists(); }
     }
+  };
+
+  // Erstellt eine ganz neue, leere Vorlage in der DB
+  const handleCreateTemplate = async () => {
+    const title = window.prompt('Name der Setlist-Vorlage (z.B. "Standard 2h Programm"):');
+    if (!title || title.trim() === '') return;
+    
+    const { data, error } = await supabase.from('setlists').insert([
+      { title: title.trim(), setlist_data: [{ id: 'set-1', name: 'Set 1', songs: [] }], created_by: session.user.id }
+    ]).select();
+    
+    if (!error && data) {
+      fetchSetlists();
+      openSetlistPlannerForTemplate(data[0]); // Öffnet direkt den Planer für die neue Vorlage
+    } else {
+      alert('Fehler beim Erstellen der Vorlage: ' + error?.message);
+    }
+  };
+
+  const handleDeleteTemplate = async (id: string) => {
+    if (confirm('Bist du sicher, dass du diese Vorlage löschen möchtest?')) {
+      await supabase.from('setlists').delete().eq('id', id);
+      fetchSetlists();
+    }
+  };
+
+  // Lädt die Daten einer Vorlage in ein Event, das gerade geplant wird
+  const loadTemplateIntoEvent = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const templateId = e.target.value;
+    if (!templateId) return;
+    if (confirm('Achtung: Dies überschreibt die aktuelle Setlist in diesem Event komplett. Fortfahren?')) {
+      const template = savedSetlists.find(s => s.id === templateId);
+      if (template && template.setlist_data) {
+        setSetlistData(template.setlist_data);
+        if (template.setlist_data.length > 0) setActiveSetId(template.setlist_data[0].id);
+      }
+    }
+    e.target.value = ''; // Reset select
   };
 
   const addNewSet = () => {
@@ -397,7 +447,8 @@ export default function App() {
     const doc = new jsPDF();
     doc.setFontSize(22);
     doc.setTextColor(0, 0, 0);
-    doc.text(`Setlist: ${planningSetlistEvent.title}`, 10, 20);
+    const title = planningSetlistEvent ? `Setlist: ${planningSetlistEvent.title}` : `Setlist: ${planningSetlistTemplate?.title}`;
+    doc.text(title, 10, 20);
     
     let y = 35;
     let totalSecs = 0;
@@ -435,9 +486,15 @@ export default function App() {
     doc.setFont("helvetica", "bold");
     doc.text(`Gesamte Spielzeit: ${formatDuration(totalSecs)} Min.`, 10, y + 10);
     
-    doc.save(`Setlist_${planningSetlistEvent.title.replace(/\s+/g, '_')}.pdf`);
+    doc.save(`${title.replace(/\s+/g, '_')}.pdf`);
   };
-  // ----------------------------------
+
+  // Helfer: Gesamtdauer einer Vorlage ausrechnen für die Übersichtskarten
+  const calculateTemplateDuration = (data: any[]) => {
+    if (!data) return 0;
+    return data.reduce((acc, set) => acc + set.songs.reduce((a:number, s:any) => a + parseDuration(s.duration), 0), 0);
+  };
+  // ==========================================
 
   const isUserAbsentOnDate = (absence: any, targetDateStr: string) => {
     const target = new Date(targetDateStr);
@@ -506,7 +563,6 @@ export default function App() {
     }
   };
 
-  // --- ANPASSUNG: Jeder darf jetzt Termine speichern ---
   const handleSaveEvent = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -646,29 +702,17 @@ export default function App() {
     }
 
     const { error } = await supabase.from('profiles').update({ instrument: newInstrument }).eq('id', userId);
-    
-    if (error) {
-      alert('⚠️ Fehler beim Ändern des Instruments:\n\n' + error.message);
-    } else {
-      fetchAllProfiles(); 
-    }
+    if (error) alert('⚠️ Fehler beim Ändern des Instruments:\n\n' + error.message);
+    else fetchAllProfiles(); 
   };
 
   const requestNotificationPermission = async () => {
-    if (!('Notification' in window)) {
-      alert('Dein Gerät oder Browser unterstützt leider keine Web-Push-Mitteilungen.');
-      return;
-    }
-    
+    if (!('Notification' in window)) return alert('Dein Gerät oder Browser unterstützt leider keine Web-Push-Mitteilungen.');
     try {
       const permission = await Notification.requestPermission();
       setPushPermission(permission);
-      
-      if (permission === 'granted') {
-        alert('🎉 Perfekt! Das Handy hat die Erlaubnis gespeichert. Die App kann dir jetzt echte Mitteilungen senden.');
-      } else {
-        alert('Die Berechtigung wurde blockiert oder abgelehnt.');
-      }
+      if (permission === 'granted') alert('🎉 Perfekt! Das Handy hat die Erlaubnis gespeichert. Die App kann dir jetzt echte Mitteilungen senden.');
+      else alert('Die Berechtigung wurde blockiert oder abgelehnt.');
     } catch (error) {
       console.error('Fehler bei der Berechtigungsanfrage:', error);
     }
@@ -837,6 +881,7 @@ export default function App() {
               
               <button onClick={() => navigateTo('termine')} className={`text-2xl font-bold ${currentView === 'termine' ? 'text-amber-500' : 'text-gray-500'}`}>📅 Termine</button>
               <button onClick={() => navigateTo('songs')} className={`text-2xl font-bold ${currentView === 'songs' ? 'text-amber-500' : 'text-gray-500'}`}>🎵 Songs & Tabs</button>
+              <button onClick={() => navigateTo('setlisten')} className={`text-2xl font-bold ${currentView === 'setlisten' ? 'text-amber-500' : 'text-gray-500'}`}>📋 Setlisten</button>
               <button onClick={() => navigateTo('kalender')} className={`text-2xl font-bold ${currentView === 'kalender' ? 'text-amber-500' : 'text-gray-500'}`}>🌴 Kalender / Urlaub</button>
               <button onClick={() => navigateTo('bandkasse')} className={`text-2xl font-bold ${currentView === 'bandkasse' ? 'text-amber-500' : 'text-gray-500'}`}>💰 Bandkasse</button>
               
@@ -850,22 +895,34 @@ export default function App() {
           )}
 
           {/* MODAL: Setlist Planner */}
-          {planningSetlistEvent && (
+          {(planningSetlistEvent || planningSetlistTemplate) && (
             <div className="fixed inset-0 bg-gray-950 z-50 overflow-hidden flex flex-col">
-              <div className="p-4 border-b border-gray-800 flex justify-between items-center bg-gray-900 shrink-0">
+              <div className="p-4 border-b border-gray-800 flex justify-between items-center bg-gray-900 shrink-0 flex-wrap gap-3">
                 <div>
-                  <h2 className="font-black text-amber-500">Setlist: {planningSetlistEvent.title}</h2>
+                  <h2 className="font-black text-amber-500 text-lg sm:text-xl">
+                    {planningSetlistEvent ? `Setlist: ${planningSetlistEvent.title}` : `Vorlage: ${planningSetlistTemplate?.title}`}
+                  </h2>
                   <p className="text-[12px] text-gray-400">Drag & Drop per Pfeil-Buttons</p>
                 </div>
-                <div className="flex gap-2">
-                  <button onClick={handleSaveSetlist} className="bg-emerald-600 font-bold text-white px-4 py-2 rounded-lg text-sm">💾 Speichern</button>
-                  <button onClick={closeSetlistPlanner} className="bg-gray-800 text-gray-300 font-bold px-4 py-2 rounded-lg text-sm border border-gray-700">X</button>
+                
+                <div className="flex gap-2 items-center">
+                  {/* NEU: "Aus Vorlage laden" (Nur sichtbar wenn wir ein Event planen) */}
+                  {planningSetlistEvent && savedSetlists.length > 0 && (
+                    <select onChange={loadTemplateIntoEvent} className="bg-gray-800 border border-gray-700 text-sm text-gray-300 rounded-lg px-2 py-2 focus:outline-none cursor-pointer">
+                      <option value="">Vorlagen laden...</option>
+                      {savedSetlists.map(s => (
+                        <option key={s.id} value={s.id}>{s.title}</option>
+                      ))}
+                    </select>
+                  )}
+                  <button onClick={handleSaveSetlist} className="bg-emerald-600 font-bold text-white px-4 py-2 rounded-lg text-sm transition-colors hover:bg-emerald-700">💾 Speichern</button>
+                  <button onClick={closeSetlistPlanner} className="bg-gray-800 text-gray-300 font-bold px-4 py-2 rounded-lg text-sm border border-gray-700 hover:bg-gray-700">X</button>
                 </div>
               </div>
 
               <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
-                <div className="w-full md:w-1/3 bg-gray-900/50 border-r border-gray-800 flex flex-col">
-                  <div className="p-4 border-b border-gray-800">
+                <div className="w-full md:w-1/3 bg-gray-900/50 border-r border-gray-800 flex flex-col h-1/2 md:h-full">
+                  <div className="p-4 border-b border-gray-800 shrink-0">
                     <input type="text" value={setlistSearchQuery} onChange={(e) => setSetlistSearchQuery(e.target.value)} placeholder="🔍 Song suchen..." className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-sm text-white" />
                   </div>
                   <div className="flex-1 overflow-y-auto p-2 space-y-1">
@@ -883,10 +940,10 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="w-full md:w-2/3 flex-1 overflow-y-auto p-4 bg-gray-950 space-y-6">
+                <div className="w-full md:w-2/3 flex-1 overflow-y-auto p-4 bg-gray-950 space-y-6 h-1/2 md:h-full">
                   <div className="flex gap-2 flex-wrap mb-4">
-                    <button onClick={addNewSet} className="bg-gray-800 text-gray-300 px-3 py-1.5 rounded-lg text-sm font-bold border border-gray-700 hover:bg-gray-700">+ Neues Set</button>
-                    <button onClick={exportSetlistPdf} className="bg-blue-500/10 text-blue-400 px-3 py-1.5 rounded-lg text-sm font-bold border border-blue-500/30 hover:bg-blue-500/20">📄 PDF Export</button>
+                    <button onClick={addNewSet} className="bg-gray-800 text-gray-300 px-3 py-1.5 rounded-lg text-sm font-bold border border-gray-700 hover:bg-gray-700 transition-colors">+ Neues Set</button>
+                    <button onClick={exportSetlistPdf} className="bg-blue-500/10 text-blue-400 px-3 py-1.5 rounded-lg text-sm font-bold border border-blue-500/30 hover:bg-blue-500/20 transition-colors">📄 PDF Export</button>
                   </div>
 
                   {setlistData.map(set => {
@@ -902,31 +959,31 @@ export default function App() {
                           </h3>
                           <div className="flex gap-3 items-center">
                             <span className="text-sm font-bold text-gray-400">Dauer: <span className="text-amber-400">{formatDuration(setTotalSecs)} Min</span></span>
-                            <button onClick={(e) => { e.stopPropagation(); deleteSet(set.id); }} className="text-red-400 text-[12px] bg-red-500/10 px-2 py-1 rounded">Löschen</button>
+                            <button onClick={(e) => { e.stopPropagation(); deleteSet(set.id); }} className="text-red-400 text-[12px] bg-red-500/10 px-2 py-1 rounded hover:bg-red-500/20 transition-colors">Löschen</button>
                           </div>
                         </div>
 
                         <div className="space-y-2">
                           {set.songs.length === 0 && <p className="text-sm text-gray-600 italic pb-2">Set ist leer. Wähle links einen Song aus (+).</p>}
                           {set.songs.map((song: any, index: number) => (
-                            <div key={`${song.id}-${index}`} className="flex items-center gap-2 bg-gray-950 border border-gray-800 p-2 rounded-lg">
-                              <span className="text-gray-500 font-black text-sm w-5 text-right">{index + 1}.</span>
+                            <div key={`${song.id}-${index}`} className="flex items-center gap-2 bg-gray-950 border border-gray-800 p-2 rounded-lg group">
+                              <span className="text-gray-500 font-black text-sm w-5 text-right shrink-0">{index + 1}.</span>
                               <div className="flex-1 min-w-0">
                                 <p className="text-sm font-bold text-gray-200 truncate">{song.title}</p>
                               </div>
-                              <span className="text-[12px] font-mono text-gray-400 mx-2">{song.duration || '--:--'}</span>
-                              <div className="flex flex-col gap-0.5">
-                                <button disabled={index === 0} onClick={(e) => { e.stopPropagation(); moveSongInSet(set.id, index, 'up'); }} className="text-gray-400 hover:text-white disabled:opacity-30 p-0.5 leading-none">▲</button>
-                                <button disabled={index === set.songs.length - 1} onClick={(e) => { e.stopPropagation(); moveSongInSet(set.id, index, 'down'); }} className="text-gray-400 hover:text-white disabled:opacity-30 p-0.5 leading-none">▼</button>
+                              <span className="text-[12px] font-mono text-gray-400 mx-2 shrink-0">{song.duration || '--:--'}</span>
+                              <div className="flex flex-col gap-0.5 shrink-0">
+                                <button disabled={index === 0} onClick={(e) => { e.stopPropagation(); moveSongInSet(set.id, index, 'up'); }} className="text-gray-400 hover:text-white disabled:opacity-30 p-0.5 leading-none transition-colors">▲</button>
+                                <button disabled={index === set.songs.length - 1} onClick={(e) => { e.stopPropagation(); moveSongInSet(set.id, index, 'down'); }} className="text-gray-400 hover:text-white disabled:opacity-30 p-0.5 leading-none transition-colors">▼</button>
                               </div>
-                              <button onClick={(e) => { e.stopPropagation(); removeSongFromSet(set.id, index); }} className="text-red-500 font-black ml-2 px-2 hover:scale-110">✕</button>
+                              <button onClick={(e) => { e.stopPropagation(); removeSongFromSet(set.id, index); }} className="text-red-500 font-black ml-2 px-2 hover:scale-110 transition-transform shrink-0">✕</button>
                             </div>
                           ))}
                         </div>
                       </div>
                     );
                   })}
-                  <div className="pt-4 mt-4 border-t border-gray-800 text-right">
+                  <div className="pt-4 mt-4 border-t border-gray-800 text-right pb-10 md:pb-0">
                     <p className="font-black text-gray-300">Gesamte Spielzeit: <span className="text-amber-500 text-xl">{formatDuration(setlistData.reduce((acc, set) => acc + set.songs.reduce((a:number, s:any) => a + parseDuration(s.duration), 0), 0))} Min</span></p>
                   </div>
                 </div>
@@ -950,7 +1007,7 @@ export default function App() {
           )}
 
           {/* MODAL: Song Detail */}
-          {selectedSong && !planningSetlistEvent && (
+          {selectedSong && !planningSetlistEvent && !planningSetlistTemplate && (
             <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
               <div className="bg-gray-900 border border-gray-800 w-full max-w-2xl max-h-[90dvh] max-w-[95vw] rounded-2xl p-6 shadow-2xl flex flex-col overflow-hidden">
                 <div className="flex justify-between items-start border-b border-gray-800 pb-3 mb-4 shrink-0">
@@ -1046,8 +1103,49 @@ export default function App() {
             </div>
           )}
 
+          {/* VIEW: SETLISTEN (STANDALONE VORLAGEN) */}
+          {currentView === 'setlisten' && !planningSetlistEvent && !planningSetlistTemplate && (
+            <div className="space-y-6">
+              <div className="flex justify-between items-center flex-wrap gap-3">
+                <h2 className="text-lg font-bold text-gray-300">📋 Setlist-Vorlagen</h2>
+                <button onClick={handleCreateTemplate} className="bg-amber-500 hover:bg-amber-600 text-gray-950 text-sm font-bold px-3 py-2 rounded-xl transition-transform active:scale-95">
+                  + Neue Vorlage
+                </button>
+              </div>
+
+              {savedSetlists.length === 0 ? (
+                <div className="bg-gray-900/60 border border-gray-800 p-8 rounded-2xl text-center">
+                  <p className="text-gray-400 mb-2">Ihr habt noch keine Vorlagen erstellt.</p>
+                  <p className="text-sm text-gray-500">Erstelle eine Standard-Setlist, um sie später bei Auftritten mit einem Klick zu laden!</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {savedSetlists.map(template => {
+                    const totalSecs = calculateTemplateDuration(template.setlist_data);
+                    
+                    return (
+                      <div key={template.id} className="bg-gray-900/40 border border-gray-800 p-4 rounded-xl flex flex-col justify-between shadow-sm">
+                        <div className="mb-4 border-b border-gray-800 pb-3">
+                          <h3 className="text-[16px] font-bold text-gray-100 mb-1">{template.title}</h3>
+                          <div className="flex gap-3 text-[12px] text-gray-400">
+                            <span className="bg-gray-800 px-2 py-0.5 rounded">Sets: {template.setlist_data?.length || 0}</span>
+                            <span className="bg-gray-800 px-2 py-0.5 rounded text-amber-500 font-mono">Dauer: {formatDuration(totalSecs)} Min</span>
+                          </div>
+                        </div>
+                        <div className="flex justify-end gap-2">
+                          <button onClick={() => openSetlistPlannerForTemplate(template)} className="text-[12px] bg-amber-500/10 text-amber-500 border border-amber-500/20 px-3 py-1.5 rounded-lg hover:bg-amber-500/20 transition-colors font-bold">✏️ Bearbeiten</button>
+                          <button onClick={() => handleDeleteTemplate(template.id)} className="text-[12px] bg-red-500/10 text-red-400 border border-red-500/20 px-3 py-1.5 rounded-lg hover:bg-red-500/20 transition-colors">🗑️ Löschen</button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* VIEW: SONGS */}
-          {currentView === 'songs' && !planningSetlistEvent && (
+          {currentView === 'songs' && !planningSetlistEvent && !planningSetlistTemplate && (
             <div className="space-y-6">
               <div className="flex justify-between items-center flex-wrap gap-3">
                 <h2 className="text-lg font-bold text-gray-300">🎵 Song-Repertoire ({songs.length})</h2>
@@ -1123,8 +1221,8 @@ export default function App() {
                       
                       {(myProfile.can_manage_events || myProfile.is_admin) && (
                          <div className="mt-3 pt-2 border-t border-gray-800/60 flex justify-end gap-2">
-                           <button onClick={() => startEditSong(song)} className="text-[12px] bg-gray-800 text-gray-300 px-2.5 py-1 rounded hover:bg-gray-700">✏️ Bearbeiten</button>
-                           <button onClick={() => handleDeleteSong(song.id)} className="text-[12px] bg-red-500/10 text-red-400 px-2.5 py-1 rounded hover:bg-red-500/20">🗑️ Löschen</button>
+                           <button onClick={() => startEditSong(song)} className="text-[12px] bg-gray-800 text-gray-300 px-2.5 py-1 rounded hover:bg-gray-700 transition-colors">✏️ Bearbeiten</button>
+                           <button onClick={() => handleDeleteSong(song.id)} className="text-[12px] bg-red-500/10 text-red-400 px-2.5 py-1 rounded hover:bg-red-500/20 transition-colors">🗑️ Löschen</button>
                          </div>
                       )}
                     </div>
@@ -1135,7 +1233,7 @@ export default function App() {
           )}
 
           {/* VIEW: TERMINE */}
-          {currentView === 'termine' && !planningSetlistEvent && (
+          {currentView === 'termine' && !planningSetlistEvent && !planningSetlistTemplate && (
             <div className="space-y-6">
               <div className="flex justify-between items-center">
                 <h2 className="text-lg font-bold text-gray-300">{editingEventId ? '✏️ Termin bearbeiten' : 'Terminübersicht'}</h2>
@@ -1267,11 +1365,11 @@ export default function App() {
                                     )}
                                   </div>
 
-                                  <div className="mt-2.5 flex gap-2">
+                                  <div className="mt-2.5 flex gap-2 flex-wrap">
                                     <button type="button" onClick={() => startEditEvent(ev)} className="text-[12px] text-gray-400 hover:text-white bg-gray-950 border border-gray-800 px-2.5 py-1 rounded-lg transition-colors">✏️ Bearbeiten</button>
                                     
-                                    {ev.event_type === 'Auftritt' && (
-                                      <button type="button" onClick={() => openSetlistPlanner(ev)} className="text-[12px] bg-amber-500/10 border border-amber-500/20 text-amber-500 font-bold px-2.5 py-1 rounded-lg hover:bg-amber-500/20 transition-colors">
+                                    {ev.event_type === 'Auftritt' && (myProfile.can_manage_events || myProfile.is_admin) && (
+                                      <button type="button" onClick={() => openSetlistPlannerForEvent(ev)} className="text-[12px] bg-amber-500/10 border border-amber-500/20 text-amber-500 font-bold px-2.5 py-1 rounded-lg hover:bg-amber-500/20 transition-colors">
                                         📋 Setlist planen
                                       </button>
                                     )}
@@ -1344,7 +1442,7 @@ export default function App() {
           )}
 
           {/* VIEW: KALENDER */}
-          {currentView === 'kalender' && (
+          {currentView === 'kalender' && !planningSetlistEvent && !planningSetlistTemplate && (
             <div className="space-y-6">
               <div className="flex items-center justify-between bg-gray-900 border border-gray-800 p-4 rounded-2xl shadow-sm">
                 <button onClick={() => changeMonth(-1)} className="p-2 bg-gray-950 hover:bg-gray-800 rounded-xl text-amber-500 font-bold text-[16px] border border-gray-800 transition-colors">&lt; Zurück</button>
@@ -1470,7 +1568,7 @@ export default function App() {
           )}
 
           {/* VIEW: VERWALTUNG */}
-          {currentView === 'verwaltung' && myProfile.is_admin && (
+          {currentView === 'verwaltung' && myProfile.is_admin && !planningSetlistEvent && !planningSetlistTemplate && (
             <div className="bg-gray-900/60 border border-gray-800 p-6 rounded-2xl shadow-sm">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-lg font-bold text-amber-500">🛡️ Admin-Zentrale</h2>
@@ -1540,7 +1638,7 @@ export default function App() {
           )}
 
           {/* VIEW: BANDKASSE */}
-          {currentView === 'bandkasse' && (
+          {currentView === 'bandkasse' && !planningSetlistEvent && !planningSetlistTemplate && (
             <div className="space-y-6">
               <h2 className="text-lg font-bold text-gray-300">💰 Bandkasse</h2>
 
