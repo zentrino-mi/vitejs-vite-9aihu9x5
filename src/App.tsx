@@ -18,7 +18,8 @@ export default function App() {
 
   const [pushPermission, setPushPermission] = useState<NotificationPermission | 'default'>('default');
 
-  const [currentView, setCurrentView] = useState<'termine' | 'kalender' | 'verwaltung' | 'bandkasse' | 'songs' | 'setlisten'>('termine'); 
+  // NEU: Navigation wurde um 'dateien' erweitert
+  const [currentView, setCurrentView] = useState<'termine' | 'kalender' | 'verwaltung' | 'bandkasse' | 'songs' | 'setlisten' | 'dateien'>('termine'); 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [activeFilter, setActiveFilter] = useState<'all' | 'Probe' | 'Auftritt' | 'Band-Event'>('all');
 
@@ -67,7 +68,6 @@ export default function App() {
   const [eventDescription, setEventDescription] = useState('');
   const [eventType, setEventType] = useState<'Probe' | 'Auftritt' | 'Band-Event'>('Probe');
   
-  // NEU: State für die Checkbox zum Speichern der Standard-Werte
   const [saveAsDefault, setSaveAsDefault] = useState(false);
 
   const [eventSetlistImage, setEventSetlistImage] = useState(''); 
@@ -80,6 +80,14 @@ export default function App() {
   const [setlistData, setSetlistData] = useState<any[]>([]);
   const [activeSetId, setActiveSetId] = useState<string | null>(null);
   const [setlistSearchQuery, setSetlistSearchQuery] = useState('');
+
+  // --- NEU: Datei-Upload States ---
+  const [bandFiles, setBandFiles] = useState<any[]>([]);
+  const [fileSearchQuery, setFileSearchQuery] = useState('');
+  const [isUploadingFile, setIsUploadingFile] = useState(false);
+  const [uploadFileTitle, setUploadFileTitle] = useState('');
+  const [uploadFileObj, setUploadFileObj] = useState<File | null>(null);
+  // --------------------------------
 
   const [instruments, setInstruments] = useState<string[]>(['Drums', 'Bass', 'Lead Gitarre', 'Gesang', 'Piano']);
 
@@ -110,6 +118,7 @@ export default function App() {
         setAbsences([]);
         setSongs([]);
         setSavedSetlists([]);
+        setBandFiles([]);
         setCurrentView('termine');
         setIsLoading(false);
       }
@@ -132,6 +141,7 @@ export default function App() {
       fetchAbsences(),
       fetchSongs(),
       fetchSetlists(), 
+      fetchBandFiles(), // Lädt die Dateien
       fetchFundBalance()
     ]);
   };
@@ -185,6 +195,11 @@ export default function App() {
     if (data) setSavedSetlists(data);
   };
 
+  const fetchBandFiles = async () => {
+    const { data } = await supabase.from('band_files').select('*').order('created_at', { ascending: false });
+    if (data) setBandFiles(data);
+  };
+
   const fetchFundBalance = async () => {
     const { data, error } = await supabase.from('band_fund').select('balance').eq('id', 1).single();
     if (data && !error) {
@@ -225,6 +240,62 @@ export default function App() {
       reader.readAsDataURL(file);
     }
   };
+
+  // --- NEU: Datei Upload Handler ---
+  const handleFileUploadSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!uploadFileObj || !uploadFileTitle) return;
+
+    const fileExt = uploadFileObj.name.split('.').pop();
+    const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 9)}.${fileExt}`;
+
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from('band_files')
+      .upload(fileName, uploadFileObj);
+
+    if (uploadError) {
+      alert('Fehler beim Datei-Upload: ' + uploadError.message);
+      return;
+    }
+
+    // Holen der öffentlichen URL
+    const { data: publicUrlData } = supabase.storage.from('band_files').getPublicUrl(fileName);
+    
+    // Speichern in der Such-Tabelle
+    const { error: dbError } = await supabase.from('band_files').insert([{
+      title: uploadFileTitle,
+      file_name: uploadFileObj.name,
+      file_url: publicUrlData.publicUrl,
+      created_by: session.user.id
+    }]);
+
+    if (dbError) {
+      alert('Fehler beim Speichern in der Datenbank: ' + dbError.message);
+    } else {
+      setUploadFileTitle('');
+      setUploadFileObj(null);
+      setIsUploadingFile(false);
+      fetchBandFiles();
+    }
+  };
+
+  const handleDeleteFile = async (fileId: string, fileUrl: string) => {
+    if (!confirm('Bist du sicher, dass du diese Datei komplett löschen willst?')) return;
+    
+    // Optional: Die Datei aus dem Storage werfen
+    const urlParts = fileUrl.split('/');
+    const fileName = urlParts[urlParts.length - 1];
+    await supabase.storage.from('band_files').remove([fileName]);
+
+    // Aus der Datenbank werfen
+    const { error } = await supabase.from('band_files').delete().eq('id', fileId);
+    if (!error) {
+      setBandFiles(prev => prev.filter(f => f.id !== fileId));
+    } else {
+      alert('Fehler beim Löschen: ' + error.message);
+    }
+  };
+  // ---------------------------------
 
   const generatePdfPreview = (lyricsText: string) => {
     if (!lyricsText) return;
@@ -604,13 +675,14 @@ export default function App() {
       savedEventId = data[0].id;
     }
 
-    // --- NEU: Standard-Werte im LocalStorage speichern, falls angehakt ---
     if (saveAsDefault) {
       localStorage.setItem('bandPortalDefaults', JSON.stringify({
         eventType,
         eventTime,
         eventLocation
       }));
+    } else {
+      localStorage.removeItem('bandPortalDefaults'); 
     }
 
     const blockedPeople = absences.filter(a => isUserAbsentOnDate(a, eventDate));
@@ -623,7 +695,10 @@ export default function App() {
       }
     }
 
-    setEditingEventId(null); setIsAddingEvent(false); resetForm(); loadData();
+    setEditingEventId(null); 
+    setIsAddingEvent(false); 
+    resetForm(); 
+    loadData();
   };
 
   const handleDeleteEvent = async (eventId: string) => {
@@ -661,18 +736,23 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // --- NEU: Funktion zum Laden der Standardwerte ---
   const loadDefaultsAndOpenForm = () => {
     const defaults = localStorage.getItem('bandPortalDefaults');
     if (defaults) {
-      const parsed = JSON.parse(defaults);
-      setEventType(parsed.eventType || 'Probe');
-      setEventTime(parsed.eventTime || '');
-      setEventLocation(parsed.eventLocation || '');
+      try {
+        const parsed = JSON.parse(defaults);
+        setEventType(parsed.eventType || 'Probe');
+        setEventTime(parsed.eventTime || '');
+        setEventLocation(parsed.eventLocation || '');
+        setSaveAsDefault(true); 
+      } catch(e) {
+        setEventType('Probe'); setEventTime(''); setEventLocation(''); setSaveAsDefault(false);
+      }
     } else {
       setEventType('Probe');
       setEventTime('');
       setEventLocation('');
+      setSaveAsDefault(false);
     }
     setEventTitle('');
     setEventDate('');
@@ -681,13 +761,13 @@ export default function App() {
     setEventSetlistImage('');
     setSetlistFile(null);
     setEditingEventId(null);
-    setSaveAsDefault(false);
-    setIsAddingEvent(true);
+    setIsAddingEvent(true); 
   };
 
   const resetForm = () => {
     setEventTitle(''); setEventDate(''); setEventTime(''); setEventLocation(''); setEventMapsLink(''); setEventDescription('');
     setEventType('Probe'); setEventSetlistImage(''); setSetlistFile(null); setEditingEventId(null); setSaveAsDefault(false);
+    setIsAddingEvent(false); 
   };
 
   const handleVote = async (eventId: string, status: 'ja' | 'nein') => {
@@ -896,6 +976,7 @@ export default function App() {
             </div>
           </div>
 
+          {/* Menü Overlay */}
           {isMenuOpen && (
             <div className="fixed inset-0 bg-gray-950/98 backdrop-blur-xl z-40 flex flex-col items-center justify-center space-y-6">
               {pushPermission !== 'granted' && (
@@ -907,6 +988,8 @@ export default function App() {
               <button onClick={() => navigateTo('termine')} className={`text-2xl font-bold ${currentView === 'termine' ? 'text-amber-500' : 'text-gray-500'}`}>📅 Termine</button>
               <button onClick={() => navigateTo('songs')} className={`text-2xl font-bold ${currentView === 'songs' ? 'text-amber-500' : 'text-gray-500'}`}>🎵 Songs & Tabs</button>
               <button onClick={() => navigateTo('setlisten')} className={`text-2xl font-bold ${currentView === 'setlisten' ? 'text-amber-500' : 'text-gray-500'}`}>📋 Setlisten</button>
+              {/* NEUER MENÜPUNKT */}
+              <button onClick={() => navigateTo('dateien')} className={`text-2xl font-bold ${currentView === 'dateien' ? 'text-amber-500' : 'text-gray-500'}`}>📁 Dateien</button>
               <button onClick={() => navigateTo('kalender')} className={`text-2xl font-bold ${currentView === 'kalender' ? 'text-amber-500' : 'text-gray-500'}`}>🌴 Kalender / Urlaub</button>
               <button onClick={() => navigateTo('bandkasse')} className={`text-2xl font-bold ${currentView === 'bandkasse' ? 'text-amber-500' : 'text-gray-500'}`}>💰 Bandkasse</button>
               
@@ -919,6 +1002,7 @@ export default function App() {
             </div>
           )}
 
+          {/* MODAL: Setlist Planner */}
           {(planningSetlistEvent || planningSetlistTemplate) && (
             <div className="fixed inset-0 bg-gray-950 z-50 overflow-hidden flex flex-col">
               <div className="p-4 border-b border-gray-800 flex justify-between items-center bg-gray-900 shrink-0 flex-wrap gap-3">
@@ -1014,6 +1098,7 @@ export default function App() {
             </div>
           )}
 
+          {/* MODAL: Setlist Image */}
           {selectedSetlistImage && (
             <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center p-4">
               <div className="bg-gray-900 border border-gray-800 w-full max-w-3xl max-h-[90dvh] max-w-[95vw] rounded-2xl p-4 shadow-2xl flex flex-col overflow-hidden">
@@ -1028,6 +1113,7 @@ export default function App() {
             </div>
           )}
 
+          {/* MODAL: Song Detail */}
           {selectedSong && !planningSetlistEvent && !planningSetlistTemplate && (
             <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
               <div className="bg-gray-900 border border-gray-800 w-full max-w-2xl max-h-[90dvh] max-w-[95vw] rounded-2xl p-6 shadow-2xl flex flex-col overflow-hidden">
@@ -1086,6 +1172,7 @@ export default function App() {
             </div>
           )}
 
+          {/* MODAL: Day Detail */}
           {selectedDayDetails && (
             <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
               <div className="bg-gray-900 border border-gray-800 w-full max-w-md max-h-[90dvh] max-w-[95vw] rounded-2xl p-6 shadow-2xl flex flex-col overflow-hidden">
@@ -1123,6 +1210,61 @@ export default function App() {
             </div>
           )}
 
+          {/* VIEW: DATEIEN (NEU) */}
+          {currentView === 'dateien' && !planningSetlistEvent && !planningSetlistTemplate && (
+            <div className="space-y-6">
+              <div className="flex justify-between items-center flex-wrap gap-3">
+                <h2 className="text-lg font-bold text-gray-300">📁 Dateien & Dokumente</h2>
+                <button onClick={() => setIsUploadingFile(!isUploadingFile)} className="bg-amber-500 hover:bg-amber-600 text-gray-950 text-sm font-bold px-3 py-2 rounded-xl transition-transform active:scale-95">
+                  {isUploadingFile ? 'Schließen' : '+ Datei hochladen'}
+                </button>
+              </div>
+
+              {isUploadingFile && (
+                <form onSubmit={handleFileUploadSubmit} className="bg-gray-900/90 border border-amber-500/20 p-5 rounded-2xl space-y-4 shadow-lg">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Bezeichnung / Titel</label>
+                      <input type="text" value={uploadFileTitle} onChange={(e) => setUploadFileTitle(e.target.value)} placeholder="z.B. Band Logos (ZIP)" className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500" required />
+                    </div>
+                    <div>
+                      <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Datei auswählen</label>
+                      <input type="file" onChange={(e) => setUploadFileObj(e.target.files?.[0] || null)} className="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-bold file:bg-gray-800 file:text-gray-300 hover:file:bg-gray-700 cursor-pointer" required />
+                    </div>
+                  </div>
+                  <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[16px] rounded-xl py-2.5 transition-colors">Hochladen & Speichern</button>
+                </form>
+              )}
+
+              <div className="relative">
+                <input type="text" value={fileSearchQuery} onChange={(e) => setFileSearchQuery(e.target.value)} placeholder="🔍 Nach Dateititel suchen..." className="w-full bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 text-[16px] text-white focus:outline-none focus:border-amber-500 shadow-sm" />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {bandFiles.filter(f => f.title.toLowerCase().includes(fileSearchQuery.toLowerCase())).length === 0 ? (
+                  <p className="text-sm text-gray-500 italic col-span-2">Keine Dateien gefunden.</p>
+                ) : (
+                  bandFiles.filter(f => f.title.toLowerCase().includes(fileSearchQuery.toLowerCase())).map(file => (
+                    <div key={file.id} className="bg-gray-900/40 border border-gray-800 p-4 rounded-xl flex flex-col justify-between shadow-sm">
+                      <div className="mb-3">
+                        <h3 className="text-[16px] font-bold text-gray-100">{file.title}</h3>
+                        <p className="text-[10px] text-gray-500 font-mono mt-1 truncate">{file.file_name}</p>
+                      </div>
+                      <div className="flex justify-between items-center mt-2 pt-3 border-t border-gray-800/60">
+                        <a href={file.file_url} target="_blank" rel="noopener noreferrer" download className="text-[12px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-3 py-1.5 rounded-lg hover:bg-blue-500/20 transition-colors font-bold">⬇️ Herunterladen</a>
+                        
+                        {(myProfile.can_manage_events || myProfile.is_admin || file.created_by === session.user.id) && (
+                          <button onClick={() => handleDeleteFile(file.id, file.file_url)} className="text-[12px] bg-red-500/10 text-red-400 px-2.5 py-1.5 rounded hover:bg-red-500/20 transition-colors">🗑️ Löschen</button>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* VIEW: SETLISTEN (STANDALONE VORLAGEN) */}
           {currentView === 'setlisten' && !planningSetlistEvent && !planningSetlistTemplate && (
             <div className="space-y-6">
               <div className="flex justify-between items-center flex-wrap gap-3">
@@ -1163,6 +1305,7 @@ export default function App() {
             </div>
           )}
 
+          {/* VIEW: SONGS */}
           {currentView === 'songs' && !planningSetlistEvent && !planningSetlistTemplate && (
             <div className="space-y-6">
               <div className="flex justify-between items-center flex-wrap gap-3">
@@ -1250,6 +1393,7 @@ export default function App() {
             </div>
           )}
 
+          {/* VIEW: TERMINE */}
           {currentView === 'termine' && !planningSetlistEvent && !planningSetlistTemplate && (
             <div className="space-y-6">
               <div className="flex justify-between items-center">
@@ -1322,10 +1466,9 @@ export default function App() {
                     <textarea value={eventDescription} onChange={(e) => setEventDescription(e.target.value)} placeholder="Infos für die Band..." rows={2} className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500 resize-none" />
                   </div>
                   
-                  {/* NEU: Checkbox zum Speichern der Standard-Werte */}
                   <div className="flex items-center gap-3 bg-gray-950 p-3 rounded-xl border border-gray-800">
-                    <input type="checkbox" id="saveDefaultToggle" checked={saveAsDefault} onChange={(e) => setSaveAsDefault(e.target.checked)} className="w-4 h-4 accent-amber-500 bg-gray-800 border-gray-700 rounded" />
-                    <label htmlFor="saveDefaultToggle" className="text-sm font-bold text-gray-300 cursor-pointer">Ort, Uhrzeit & Typ als Standard für neue Termine merken</label>
+                    <input type="checkbox" id="saveDefaultToggle" checked={saveAsDefault} onChange={(e) => setSaveAsDefault(e.target.checked)} className="w-4 h-4 accent-amber-500 bg-gray-800 border-gray-700 rounded cursor-pointer" />
+                    <label htmlFor="saveDefaultToggle" className="text-sm font-bold text-gray-300 cursor-pointer select-none">Ort, Uhrzeit & Typ als Standard für neue Termine merken</label>
                   </div>
 
                   <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[16px] rounded-xl py-2.5 transition-colors">{editingEventId ? 'Änderungen speichern' : 'Termin live veröffentlichen'}</button>
@@ -1362,7 +1505,6 @@ export default function App() {
                           return (
                             <div key={ev.id} className={`relative overflow-hidden bg-gray-900/40 border rounded-2xl p-4 transition-all shadow-sm ${isAllGoing ? 'border-emerald-500/50 bg-emerald-500/[0.03] shadow-[0_0_15px_rgba(16,185,129,0.15)]' : 'border-gray-800 hover:border-gray-700/70'}`}>
                               
-                              {/* NEU: DAS 'ALLE DABEI' BADGE */}
                               {isAllGoing && (
                                 <div className="absolute top-0 right-0 bg-emerald-500 text-gray-950 text-[10px] font-black px-3 py-1 rounded-bl-xl z-20 shadow-md uppercase tracking-wider">
                                   🔥 Alle dabei!
