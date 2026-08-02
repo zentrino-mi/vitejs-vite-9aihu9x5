@@ -27,10 +27,8 @@ export default function App() {
   const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
   const [selectedSetlistImage, setSelectedSetlistImage] = useState<string | null>(null); 
   
-  // NEU: Toggle für alte Termine
   const [showPastEvents, setShowPastEvents] = useState(false);
   
-  // Hilfsfunktion: Heutiges Datum als YYYY-MM-DD
   const getTodayString = () => {
     const today = new Date();
     const tzOffset = today.getTimezoneOffset() * 60000;
@@ -756,7 +754,7 @@ export default function App() {
       setSaveAsDefault(false);
     }
     setEventTitle('');
-    setEventDate(getTodayString()); // NEU: Formular startet jetzt automatisch mit dem heutigen Datum!
+    setEventDate(getTodayString()); 
     setEventMapsLink('');
     setEventDescription('');
     setEventSetlistImage('');
@@ -765,7 +763,6 @@ export default function App() {
     setIsAddingEvent(true); 
   };
 
-  // NEU: Gleiche Funktion für Urlaub/Abwesenheiten, damit dort auch direkt ein Datum steht
   const loadAbsenceFormDefaults = () => {
     setAbsenceStartDate(getTodayString());
     setAbsenceEndDate(getTodayString());
@@ -831,13 +828,6 @@ export default function App() {
     }
   };
 
-  const getParsedDate = (dateStr: string) => {
-    const d = new Date(dateStr);
-    const days = ['SO', 'MO', 'DI', 'MI', 'DO', 'FR', 'SA'];
-    const months = ['JAN', 'FEB', 'MÄR', 'APR', 'MAI', 'JUN', 'JUL', 'AUG', 'SEP', 'OKT', 'NOV', 'DEZ'];
-    return { dayNum: d.getDate(), dayName: days[d.getDay()], monthName: months[d.getMonth()] };
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setMessage({ text: '', isError: false });
@@ -866,9 +856,15 @@ export default function App() {
   const handleLogout = () => { setIsMenuOpen(false); supabase.auth.signOut(); };
   const navigateTo = (view: typeof currentView) => { setCurrentView(view); setIsMenuOpen(false); };
 
-  const getFirstName = (fullName: string) => {
+  // --- NEU: ZWEI PAULS FIX ---
+  // Diese Funktion baut den Vornamen + den ersten Buchstaben des Nachnamens
+  const getDisplayName = (fullName: string) => {
     if (!fullName) return '';
-    return fullName.split(' ')[0];
+    const parts = fullName.trim().split(' ');
+    if (parts.length > 1) {
+      return `${parts[0]} ${parts[parts.length - 1].charAt(0)}.`;
+    }
+    return parts[0];
   };
 
   const getDaysInMonthGrid = () => {
@@ -894,7 +890,6 @@ export default function App() {
     return gridDays;
   };
 
-  // --- NEU: Sortier- und Gruppierungs-Logik für "Vergangene Termine" ---
   const isPastEvent = (dateStr: string) => {
     return dateStr < getTodayString();
   };
@@ -908,6 +903,13 @@ export default function App() {
       groups[key].push(ev);
     });
     return groups;
+  };
+
+  const getParsedDate = (dateStr: string) => {
+    const d = new Date(dateStr);
+    const days = ['SO', 'MO', 'DI', 'MI', 'DO', 'FR', 'SA'];
+    const months = ['JAN', 'FEB', 'MÄR', 'APR', 'MAI', 'JUN', 'JUL', 'AUG', 'SEP', 'OKT', 'NOV', 'DEZ'];
+    return { dayNum: d.getDate(), dayName: days[d.getDay()], monthName: months[d.getMonth()] };
   };
 
   const changeMonth = (direction: number) => {
@@ -924,12 +926,10 @@ export default function App() {
     });
   };
 
-  // Vorbereiten der Termine für die Listenansicht
   const typeFilteredEvents = events.filter(ev => activeFilter === 'all' || ev.event_type === activeFilter);
   const upcomingEventsList = typeFilteredEvents.filter(ev => !isPastEvent(ev.event_date));
   const pastEventsList = typeFilteredEvents.filter(ev => isPastEvent(ev.event_date));
   
-  // Die Events, die am Ende wirklich in der UI landen
   const displayEvents = showPastEvents ? typeFilteredEvents : upcomingEventsList;
   const groupedDisplayEvents = getGroupedEventsByMonth(displayEvents);
 
@@ -977,7 +977,8 @@ export default function App() {
           <div className="flex justify-between items-center border-b border-gray-900 pb-4 mb-6">
             <div>
               <h1 className="text-xl font-black bg-gradient-to-r from-amber-400 to-orange-500 bg-clip-text text-transparent tracking-tight">Burnin' Bugs</h1>
-              <p className="text-sm text-gray-500">Hi, {getFirstName(myProfile.full_name)}</p>
+              {/* NEU: Display Name in der Begrüßung */}
+              <p className="text-sm text-gray-500">Hi, {getDisplayName(myProfile.full_name)}</p>
             </div>
             <div className="flex items-center gap-2">
               <button onClick={handleLogout} className="bg-gray-900 border border-gray-800 text-gray-400 hover:text-white text-sm px-3 py-1.5 rounded-xl transition-colors">Abmelden</button>
@@ -995,7 +996,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* Menü Overlay */}
           {isMenuOpen && (
             <div className="fixed inset-0 bg-gray-950/98 backdrop-blur-xl z-40 flex flex-col items-center justify-center space-y-6">
               {pushPermission !== 'granted' && (
@@ -1020,7 +1020,6 @@ export default function App() {
             </div>
           )}
 
-          {/* MODAL: Setlist Planner */}
           {(planningSetlistEvent || planningSetlistTemplate) && (
             <div className="fixed inset-0 bg-gray-950 z-50 overflow-hidden flex flex-col">
               <div className="p-4 border-b border-gray-800 flex justify-between items-center bg-gray-900 shrink-0 flex-wrap gap-3">
@@ -1116,7 +1115,6 @@ export default function App() {
             </div>
           )}
 
-          {/* MODAL: Setlist Image */}
           {selectedSetlistImage && (
             <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center p-4">
               <div className="bg-gray-900 border border-gray-800 w-full max-w-3xl max-h-[90dvh] max-w-[95vw] rounded-2xl p-4 shadow-2xl flex flex-col overflow-hidden">
@@ -1131,7 +1129,6 @@ export default function App() {
             </div>
           )}
 
-          {/* MODAL: Song Detail */}
           {selectedSong && !planningSetlistEvent && !planningSetlistTemplate && (
             <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
               <div className="bg-gray-900 border border-gray-800 w-full max-w-2xl max-h-[90dvh] max-w-[95vw] rounded-2xl p-6 shadow-2xl flex flex-col overflow-hidden">
@@ -1190,7 +1187,6 @@ export default function App() {
             </div>
           )}
 
-          {/* MODAL: Day Detail */}
           {selectedDayDetails && (
             <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
               <div className="bg-gray-900 border border-gray-800 w-full max-w-md max-h-[90dvh] max-w-[95vw] rounded-2xl p-6 shadow-2xl flex flex-col overflow-hidden">
@@ -1228,7 +1224,6 @@ export default function App() {
             </div>
           )}
 
-          {/* VIEW: DATEIEN */}
           {currentView === 'dateien' && !planningSetlistEvent && !planningSetlistTemplate && (
             <div className="space-y-6">
               <div className="flex justify-between items-center flex-wrap gap-3">
@@ -1282,7 +1277,6 @@ export default function App() {
             </div>
           )}
 
-          {/* VIEW: SETLISTEN (STANDALONE VORLAGEN) */}
           {currentView === 'setlisten' && !planningSetlistEvent && !planningSetlistTemplate && (
             <div className="space-y-6">
               <div className="flex justify-between items-center flex-wrap gap-3">
@@ -1323,7 +1317,6 @@ export default function App() {
             </div>
           )}
 
-          {/* VIEW: SONGS */}
           {currentView === 'songs' && !planningSetlistEvent && !planningSetlistTemplate && (
             <div className="space-y-6">
               <div className="flex justify-between items-center flex-wrap gap-3">
@@ -1411,7 +1404,6 @@ export default function App() {
             </div>
           )}
 
-          {/* VIEW: TERMINE */}
           {currentView === 'termine' && !planningSetlistEvent && !planningSetlistTemplate && (
             <div className="space-y-6">
               <div className="flex justify-between items-center">
@@ -1501,7 +1493,6 @@ export default function App() {
                 <button onClick={() => setActiveFilter('Band-Event')} className={`relative z-10 w-1/4 py-1.5 text-sm font-bold transition-colors text-center ${activeFilter === 'Band-Event' ? 'text-white' : 'text-gray-400'}`}>Events</button>
               </div>
 
-              {/* NEU: BESSERE LEER-ZUSTÄNDE UND SORTIERUNG */}
               <div className="space-y-6">
                 {Object.keys(groupedDisplayEvents).length === 0 ? (
                   <p className="text-sm text-gray-500 italic text-center py-6">
@@ -1523,7 +1514,6 @@ export default function App() {
                           const isExpanded = expandedEventId === ev.id;
                           const isAllGoing = goingUsers.length === activeMembersCount && activeMembersCount > 0;
                           
-                          // NEU: Optische Unterscheidung für alte Termine
                           const isPast = isPastEvent(ev.event_date);
 
                           return (
@@ -1546,7 +1536,6 @@ export default function App() {
                                   <div className="flex items-center gap-2 mb-1 flex-wrap">
                                     <h3 className="text-[16px] font-bold text-gray-100 tracking-tight truncate">{ev.title}</h3>
                                     <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded uppercase tracking-wider ${ev.event_type === 'Auftritt' ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20' : ev.event_type === 'Band-Event' ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20' : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'}`}>{ev.event_type}</span>
-                                    {/* NEU: Label für alte Termine */}
                                     {isPast && <span className="text-[10px] font-bold bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded uppercase">⏳ Vergangen</span>}
                                   </div>
                                   <div className="space-y-1 text-sm text-gray-400 mt-1">
@@ -1615,15 +1604,15 @@ export default function App() {
                                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                                       <div className="bg-emerald-950/20 border border-emerald-900/30 p-2 rounded-lg space-y-1">
                                         <span className="font-bold text-emerald-400 block border-b border-emerald-900/40 pb-1 mb-1">Dabei ({goingUsers.length})</span>
-                                        {goingUsers.length === 0 ? <span className="text-gray-600 italic block">Niemand</span> : goingUsers.map(u => <span key={u.id} className="flex items-center gap-1 text-emerald-300/90 font-medium py-0.5">✓ {u.full_name}</span>)}
+                                        {goingUsers.length === 0 ? <span className="text-gray-600 italic block">Niemand</span> : goingUsers.map(u => <span key={u.id} className="flex items-center gap-1 text-emerald-300/90 font-medium py-0.5">✓ {getDisplayName(u.full_name)}</span>)}
                                       </div>
                                       <div className="bg-red-950/20 border border-red-900/30 p-2 rounded-lg space-y-1">
                                         <span className="font-bold text-red-400 block border-b border-red-900/40 pb-1 mb-1">Abgesagt ({decliningUsers.length})</span>
-                                        {decliningUsers.length === 0 ? <span className="text-gray-600 italic block">Niemand</span> : decliningUsers.map(u => <span key={u.id} className="flex items-center gap-1 text-red-300/90 font-medium py-0.5">✕ {u.full_name}</span>)}
+                                        {decliningUsers.length === 0 ? <span className="text-gray-600 italic block">Niemand</span> : decliningUsers.map(u => <span key={u.id} className="flex items-center gap-1 text-red-300/90 font-medium py-0.5">✕ {getDisplayName(u.full_name)}</span>)}
                                       </div>
                                       <div className="bg-amber-950/20 border border-amber-900/30 p-2 rounded-lg space-y-1">
                                         <span className="font-bold text-amber-400 block border-b border-amber-900/40 pb-1 mb-1">Offen ({pendingUsers.length})</span>
-                                        {pendingUsers.length === 0 ? <span className="text-gray-600 italic block">Alle abgestimmt</span> : pendingUsers.map(u => <span key={u.id} className="flex items-center gap-1 text-amber-300/80 py-0.5">? {u.full_name}</span>)}
+                                        {pendingUsers.length === 0 ? <span className="text-gray-600 italic block">Alle abgestimmt</span> : pendingUsers.map(u => <span key={u.id} className="flex items-center gap-1 text-amber-300/80 py-0.5">? {getDisplayName(u.full_name)}</span>)}
                                       </div>
                                     </div>
                                   </div>
@@ -1638,7 +1627,6 @@ export default function App() {
                 )}
               </div>
               
-              {/* NEU: TOGGLE-BUTTON FÜR VERGANGENE TERMINE */}
               {pastEventsList.length > 0 && (
                 <div className="flex justify-center pt-8 border-t border-gray-900">
                   <button onClick={() => setShowPastEvents(!showPastEvents)} className="bg-gray-900 border border-gray-800 hover:border-gray-700 text-gray-400 hover:text-white text-sm font-bold px-5 py-2.5 rounded-full transition-all">
@@ -1683,7 +1671,7 @@ export default function App() {
                             if (a.start_date !== a.end_date) {
                               return (
                                 <div key={a.id} className="text-[10px] font-bold truncate bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1.5 py-0.5 rounded-md tracking-tight leading-tight w-full">
-                                  🌴 {u ? getFirstName(u.full_name) : 'Urlaub'}
+                                  🌴 {u ? getDisplayName(u.full_name) : 'Urlaub'}
                                 </div>
                               );
                             }
