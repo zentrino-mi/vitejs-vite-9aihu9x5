@@ -18,7 +18,6 @@ export default function App() {
 
   const [pushPermission, setPushPermission] = useState<NotificationPermission | 'default'>('default');
 
-  // NEU: Navigation wurde um 'dateien' erweitert
   const [currentView, setCurrentView] = useState<'termine' | 'kalender' | 'verwaltung' | 'bandkasse' | 'songs' | 'setlisten' | 'dateien'>('termine'); 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [activeFilter, setActiveFilter] = useState<'all' | 'Probe' | 'Auftritt' | 'Band-Event'>('all');
@@ -28,6 +27,16 @@ export default function App() {
   const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
   const [selectedSetlistImage, setSelectedSetlistImage] = useState<string | null>(null); 
   
+  // NEU: Toggle für alte Termine
+  const [showPastEvents, setShowPastEvents] = useState(false);
+  
+  // Hilfsfunktion: Heutiges Datum als YYYY-MM-DD
+  const getTodayString = () => {
+    const today = new Date();
+    const tzOffset = today.getTimezoneOffset() * 60000;
+    return (new Date(today.getTime() - tzOffset)).toISOString().split('T')[0];
+  };
+
   const [absences, setAbsences] = useState<any[]>([]);
   const [absenceStartDate, setAbsenceStartDate] = useState('');
   const [absenceEndDate, setAbsenceEndDate] = useState('');
@@ -81,13 +90,11 @@ export default function App() {
   const [activeSetId, setActiveSetId] = useState<string | null>(null);
   const [setlistSearchQuery, setSetlistSearchQuery] = useState('');
 
-  // --- NEU: Datei-Upload States ---
   const [bandFiles, setBandFiles] = useState<any[]>([]);
   const [fileSearchQuery, setFileSearchQuery] = useState('');
   const [isUploadingFile, setIsUploadingFile] = useState(false);
   const [uploadFileTitle, setUploadFileTitle] = useState('');
   const [uploadFileObj, setUploadFileObj] = useState<File | null>(null);
-  // --------------------------------
 
   const [instruments, setInstruments] = useState<string[]>(['Drums', 'Bass', 'Lead Gitarre', 'Gesang', 'Piano']);
 
@@ -141,7 +148,7 @@ export default function App() {
       fetchAbsences(),
       fetchSongs(),
       fetchSetlists(), 
-      fetchBandFiles(), // Lädt die Dateien
+      fetchBandFiles(), 
       fetchFundBalance()
     ]);
   };
@@ -241,7 +248,6 @@ export default function App() {
     }
   };
 
-  // --- NEU: Datei Upload Handler ---
   const handleFileUploadSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!uploadFileObj || !uploadFileTitle) return;
@@ -258,10 +264,8 @@ export default function App() {
       return;
     }
 
-    // Holen der öffentlichen URL
     const { data: publicUrlData } = supabase.storage.from('band_files').getPublicUrl(fileName);
     
-    // Speichern in der Such-Tabelle
     const { error: dbError } = await supabase.from('band_files').insert([{
       title: uploadFileTitle,
       file_name: uploadFileObj.name,
@@ -282,12 +286,10 @@ export default function App() {
   const handleDeleteFile = async (fileId: string, fileUrl: string) => {
     if (!confirm('Bist du sicher, dass du diese Datei komplett löschen willst?')) return;
     
-    // Optional: Die Datei aus dem Storage werfen
     const urlParts = fileUrl.split('/');
     const fileName = urlParts[urlParts.length - 1];
     await supabase.storage.from('band_files').remove([fileName]);
 
-    // Aus der Datenbank werfen
     const { error } = await supabase.from('band_files').delete().eq('id', fileId);
     if (!error) {
       setBandFiles(prev => prev.filter(f => f.id !== fileId));
@@ -295,7 +297,6 @@ export default function App() {
       alert('Fehler beim Löschen: ' + error.message);
     }
   };
-  // ---------------------------------
 
   const generatePdfPreview = (lyricsText: string) => {
     if (!lyricsText) return;
@@ -755,7 +756,7 @@ export default function App() {
       setSaveAsDefault(false);
     }
     setEventTitle('');
-    setEventDate('');
+    setEventDate(getTodayString()); // NEU: Formular startet jetzt automatisch mit dem heutigen Datum!
     setEventMapsLink('');
     setEventDescription('');
     setEventSetlistImage('');
@@ -763,6 +764,12 @@ export default function App() {
     setEditingEventId(null);
     setIsAddingEvent(true); 
   };
+
+  // NEU: Gleiche Funktion für Urlaub/Abwesenheiten, damit dort auch direkt ein Datum steht
+  const loadAbsenceFormDefaults = () => {
+    setAbsenceStartDate(getTodayString());
+    setAbsenceEndDate(getTodayString());
+  }
 
   const resetForm = () => {
     setEventTitle(''); setEventDate(''); setEventTime(''); setEventLocation(''); setEventMapsLink(''); setEventDescription('');
@@ -887,9 +894,14 @@ export default function App() {
     return gridDays;
   };
 
-  const getGroupedEventsByMonth = () => {
+  // --- NEU: Sortier- und Gruppierungs-Logik für "Vergangene Termine" ---
+  const isPastEvent = (dateStr: string) => {
+    return dateStr < getTodayString();
+  };
+
+  const getGroupedEventsByMonth = (eventsToGroup: any[]) => {
     const groups: { [key: string]: any[] } = {};
-    filteredEvents.forEach(ev => {
+    eventsToGroup.forEach(ev => {
       const d = new Date(ev.event_date);
       const key = d.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' });
       if (!groups[key]) groups[key] = [];
@@ -912,7 +924,15 @@ export default function App() {
     });
   };
 
-  const filteredEvents = events.filter(ev => activeFilter === 'all' || ev.event_type === activeFilter);
+  // Vorbereiten der Termine für die Listenansicht
+  const typeFilteredEvents = events.filter(ev => activeFilter === 'all' || ev.event_type === activeFilter);
+  const upcomingEventsList = typeFilteredEvents.filter(ev => !isPastEvent(ev.event_date));
+  const pastEventsList = typeFilteredEvents.filter(ev => isPastEvent(ev.event_date));
+  
+  // Die Events, die am Ende wirklich in der UI landen
+  const displayEvents = showPastEvents ? typeFilteredEvents : upcomingEventsList;
+  const groupedDisplayEvents = getGroupedEventsByMonth(displayEvents);
+
   const activeMembersCount = allProfiles.filter(p => p.is_approved || p.is_admin).length;
   
   const filteredSongs = songs.filter(s => 
@@ -944,7 +964,6 @@ export default function App() {
   }
 
   const calendarGrid = getDaysInMonthGrid();
-  const groupedEvents = getGroupedEventsByMonth();
   const weekDays = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
 
   // ==========================================
@@ -988,9 +1007,8 @@ export default function App() {
               <button onClick={() => navigateTo('termine')} className={`text-2xl font-bold ${currentView === 'termine' ? 'text-amber-500' : 'text-gray-500'}`}>📅 Termine</button>
               <button onClick={() => navigateTo('songs')} className={`text-2xl font-bold ${currentView === 'songs' ? 'text-amber-500' : 'text-gray-500'}`}>🎵 Songs & Tabs</button>
               <button onClick={() => navigateTo('setlisten')} className={`text-2xl font-bold ${currentView === 'setlisten' ? 'text-amber-500' : 'text-gray-500'}`}>📋 Setlisten</button>
-              {/* NEUER MENÜPUNKT */}
               <button onClick={() => navigateTo('dateien')} className={`text-2xl font-bold ${currentView === 'dateien' ? 'text-amber-500' : 'text-gray-500'}`}>📁 Dateien</button>
-              <button onClick={() => navigateTo('kalender')} className={`text-2xl font-bold ${currentView === 'kalender' ? 'text-amber-500' : 'text-gray-500'}`}>🌴 Kalender / Urlaub</button>
+              <button onClick={() => { navigateTo('kalender'); loadAbsenceFormDefaults(); }} className={`text-2xl font-bold ${currentView === 'kalender' ? 'text-amber-500' : 'text-gray-500'}`}>🌴 Kalender / Urlaub</button>
               <button onClick={() => navigateTo('bandkasse')} className={`text-2xl font-bold ${currentView === 'bandkasse' ? 'text-amber-500' : 'text-gray-500'}`}>💰 Bandkasse</button>
               
               {myProfile.is_admin && (
@@ -1210,7 +1228,7 @@ export default function App() {
             </div>
           )}
 
-          {/* VIEW: DATEIEN (NEU) */}
+          {/* VIEW: DATEIEN */}
           {currentView === 'dateien' && !planningSetlistEvent && !planningSetlistTemplate && (
             <div className="space-y-6">
               <div className="flex justify-between items-center flex-wrap gap-3">
@@ -1483,16 +1501,19 @@ export default function App() {
                 <button onClick={() => setActiveFilter('Band-Event')} className={`relative z-10 w-1/4 py-1.5 text-sm font-bold transition-colors text-center ${activeFilter === 'Band-Event' ? 'text-white' : 'text-gray-400'}`}>Events</button>
               </div>
 
+              {/* NEU: BESSERE LEER-ZUSTÄNDE UND SORTIERUNG */}
               <div className="space-y-6">
-                {Object.keys(groupedEvents).length === 0 ? (
-                  <p className="text-sm text-gray-500 italic">Keine Termine für die aktuelle Auswahl vorhanden.</p>
+                {Object.keys(groupedDisplayEvents).length === 0 ? (
+                  <p className="text-sm text-gray-500 italic text-center py-6">
+                    {showPastEvents ? "Keine Termine für diesen Filter vorhanden." : "Aktuell stehen keine zukünftigen Termine an."}
+                  </p>
                 ) : (
-                  Object.keys(groupedEvents).map(monthYearKey => (
+                  Object.keys(groupedDisplayEvents).map(monthYearKey => (
                     <div key={monthYearKey} className="space-y-3">
                       <h3 className="text-sm font-black text-amber-500 tracking-wider uppercase border-b border-gray-900 pb-1">{monthYearKey}</h3>
                       
                       <div className="space-y-3">
-                        {groupedEvents[monthYearKey].map(ev => {
+                        {groupedDisplayEvents[monthYearKey].map(ev => {
                           const { dayNum, dayName, monthName } = getParsedDate(ev.event_date);
                           const eventVotes = responses.filter(r => r.event_id === ev.id);
                           const goingUsers = allProfiles.filter(p => eventVotes.some(v => v.user_id === p.id && v.status === 'ja'));
@@ -1501,19 +1522,22 @@ export default function App() {
                           const myVote = eventVotes.find(v => v.user_id === session.user.id)?.status;
                           const isExpanded = expandedEventId === ev.id;
                           const isAllGoing = goingUsers.length === activeMembersCount && activeMembersCount > 0;
+                          
+                          // NEU: Optische Unterscheidung für alte Termine
+                          const isPast = isPastEvent(ev.event_date);
 
                           return (
-                            <div key={ev.id} className={`relative overflow-hidden bg-gray-900/40 border rounded-2xl p-4 transition-all shadow-sm ${isAllGoing ? 'border-emerald-500/50 bg-emerald-500/[0.03] shadow-[0_0_15px_rgba(16,185,129,0.15)]' : 'border-gray-800 hover:border-gray-700/70'}`}>
+                            <div key={ev.id} className={`relative overflow-hidden bg-gray-900/40 border rounded-2xl p-4 transition-all shadow-sm ${isAllGoing ? 'border-emerald-500/50 bg-emerald-500/[0.03] shadow-[0_0_15px_rgba(16,185,129,0.15)]' : 'border-gray-800 hover:border-gray-700/70'} ${isPast ? 'opacity-60 grayscale-[30%]' : ''}`}>
                               
-                              {isAllGoing && (
+                              {isAllGoing && !isPast && (
                                 <div className="absolute top-0 right-0 bg-emerald-500 text-gray-950 text-[10px] font-black px-3 py-1 rounded-bl-xl z-20 shadow-md uppercase tracking-wider">
                                   🔥 Alle dabei!
                                 </div>
                               )}
 
                               <div className="flex items-start gap-4 relative z-10 mt-2">
-                                <div className={`flex flex-col items-center justify-center bg-gray-950 border rounded-xl min-w-[64px] h-[72px] text-center p-2 shadow-inner ${isAllGoing ? 'border-emerald-500/30' : 'border-gray-800'}`}>
-                                  <span className={`text-[10px] font-black tracking-wider uppercase leading-none ${isAllGoing ? 'text-emerald-400' : 'text-amber-500'}`}>{dayName}</span>
+                                <div className={`flex flex-col items-center justify-center bg-gray-950 border rounded-xl min-w-[64px] h-[72px] text-center p-2 shadow-inner ${isAllGoing && !isPast ? 'border-emerald-500/30' : 'border-gray-800'}`}>
+                                  <span className={`text-[10px] font-black tracking-wider uppercase leading-none ${isAllGoing && !isPast ? 'text-emerald-400' : 'text-amber-500'}`}>{dayName}</span>
                                   <span className="text-2xl font-black text-white my-0.5 leading-none">{dayNum}</span>
                                   <span className="text-[10px] font-bold text-gray-400 tracking-wide uppercase leading-none">{monthName}</span>
                                 </div>
@@ -1522,6 +1546,8 @@ export default function App() {
                                   <div className="flex items-center gap-2 mb-1 flex-wrap">
                                     <h3 className="text-[16px] font-bold text-gray-100 tracking-tight truncate">{ev.title}</h3>
                                     <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded uppercase tracking-wider ${ev.event_type === 'Auftritt' ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20' : ev.event_type === 'Band-Event' ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20' : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'}`}>{ev.event_type}</span>
+                                    {/* NEU: Label für alte Termine */}
+                                    {isPast && <span className="text-[10px] font-bold bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded uppercase">⏳ Vergangen</span>}
                                   </div>
                                   <div className="space-y-1 text-sm text-gray-400 mt-1">
                                     <div className="flex items-center gap-1.5"><span className="text-amber-500/80">🕒</span><span className="font-medium text-gray-300">{ev.event_time.substring(0, 5)} Uhr</span></div>
@@ -1611,6 +1637,16 @@ export default function App() {
                   ))
                 )}
               </div>
+              
+              {/* NEU: TOGGLE-BUTTON FÜR VERGANGENE TERMINE */}
+              {pastEventsList.length > 0 && (
+                <div className="flex justify-center pt-8 border-t border-gray-900">
+                  <button onClick={() => setShowPastEvents(!showPastEvents)} className="bg-gray-900 border border-gray-800 hover:border-gray-700 text-gray-400 hover:text-white text-sm font-bold px-5 py-2.5 rounded-full transition-all">
+                    {showPastEvents ? '🔼 Vergangene Termine ausblenden' : `👀 ${pastEventsList.length} vergangene Termine einblenden`}
+                  </button>
+                </div>
+              )}
+              
             </div>
           )}
 
