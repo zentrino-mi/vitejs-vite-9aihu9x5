@@ -52,11 +52,10 @@ export default function App() {
   const [songTitle, setSongTitle] = useState('');
   const [songArtist, setSongArtist] = useState('');
   const [songDuration, setSongDuration] = useState(''); 
+  const [songBpm, setSongBpm] = useState(''); 
+  const [songKey, setSongKey] = useState(''); 
   const [songLyrics, setSongLyrics] = useState('');
-  const [songChords, setSongChords] = useState('');
   const [songTabLink, setSongTabLink] = useState('');
-  const [songPdfUrl, setSongPdfUrl] = useState('');
-  const [generatedPdfPreviewUrl, setGeneratedPdfPreviewUrl] = useState<string | null>(null); 
 
   const [fundBalance, setFundBalance] = useState<number>(0);
   const [newBalanceInput, setNewBalanceInput] = useState<string>('');
@@ -296,14 +295,29 @@ export default function App() {
     }
   };
 
-  const generatePdfPreview = (lyricsText: string) => {
-    if (!lyricsText) return;
+  const downloadLyricsPdf = (song: any) => {
+    if (!song.lyrics) return;
     const doc = new jsPDF();
+    doc.setFontSize(22);
+    doc.setFont("helvetica", "bold");
+    doc.text(`${song.title}`, 10, 20);
+    
+    doc.setFontSize(14);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(100, 100, 100);
+    doc.text(`${song.artist || 'Unbekannter Interpret'}`, 10, 30);
+    
+    if (song.bpm || song.tonart || song.duration) {
+      doc.setFontSize(10);
+      doc.text(`BPM: ${song.bpm || '-'} | Tonart: ${song.tonart || '-'} | Dauer: ${song.duration || '-'}`, 10, 38);
+    }
+
+    doc.setTextColor(0, 0, 0);
     doc.setFontSize(12);
-    const splitLyrics = doc.splitTextToSize(lyricsText, 180); 
-    doc.text(splitLyrics, 10, 10);
-    const pdfBlobUrl = doc.output('bloburl');
-    setGeneratedPdfPreviewUrl(pdfBlobUrl.toString());
+    const splitLyrics = doc.splitTextToSize(song.lyrics, 180); 
+    doc.text(splitLyrics, 10, 50);
+    
+    doc.save(`${song.title.replace(/\s+/g, '_')}_Lyrics.pdf`);
   };
 
   const parseDuration = (dur: string) => {
@@ -325,10 +339,10 @@ export default function App() {
       title: songTitle,
       artist: songArtist,
       duration: songDuration, 
+      bpm: songBpm,
+      tonart: songKey,
       lyrics: songLyrics,
-      chords: songChords,
-      tab_link: songTabLink,
-      pdf_url: songPdfUrl
+      tab_link: songTabLink
     };
 
     if (editingSongId) {
@@ -357,10 +371,10 @@ export default function App() {
     setSongTitle(s.title); 
     setSongArtist(s.artist || ''); 
     setSongDuration(s.duration || '');
+    setSongBpm(s.bpm || '');
+    setSongKey(s.tonart || '');
     setSongLyrics(s.lyrics || ''); 
-    setSongChords(s.chords || ''); 
     setSongTabLink(s.tab_link || ''); 
-    setSongPdfUrl(s.pdf_url || '');
     setIsAddingSong(true); 
     window.scrollTo({ top: 0, behavior: 'smooth' });
     setSelectedSong(null);
@@ -371,10 +385,10 @@ export default function App() {
     setSongTitle(''); 
     setSongArtist(''); 
     setSongDuration(''); 
+    setSongBpm('');
+    setSongKey('');
     setSongLyrics(''); 
-    setSongChords('');
     setSongTabLink(''); 
-    setSongPdfUrl(''); 
     setIsAddingSong(false);
   };
 
@@ -386,7 +400,6 @@ export default function App() {
         setSongs(prev => prev.filter(s => s.id !== songId));
         if (selectedSong?.id === songId) {
           setSelectedSong(null);
-          setGeneratedPdfPreviewUrl(null);
         }
       }
     }
@@ -856,8 +869,6 @@ export default function App() {
   const handleLogout = () => { setIsMenuOpen(false); supabase.auth.signOut(); };
   const navigateTo = (view: typeof currentView) => { setCurrentView(view); setIsMenuOpen(false); };
 
-  // --- NEU: ZWEI PAULS FIX ---
-  // Diese Funktion baut den Vornamen + den ersten Buchstaben des Nachnamens
   const getDisplayName = (fullName: string) => {
     if (!fullName) return '';
     const parts = fullName.trim().split(' ');
@@ -966,9 +977,6 @@ export default function App() {
   const calendarGrid = getDaysInMonthGrid();
   const weekDays = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
 
-  // ==========================================
-  // HAUPT-ANSICHT (WENN EINGELOGGT)
-  // ==========================================
   if (session && myProfile) {
     return (
       <div className="min-h-[100dvh] w-full bg-gray-950 text-gray-100 font-sans relative overflow-x-hidden selection:bg-amber-500 selection:text-black m-0 p-0">
@@ -977,7 +985,6 @@ export default function App() {
           <div className="flex justify-between items-center border-b border-gray-900 pb-4 mb-6">
             <div>
               <h1 className="text-xl font-black bg-gradient-to-r from-amber-400 to-orange-500 bg-clip-text text-transparent tracking-tight">Burnin' Bugs</h1>
-              {/* NEU: Display Name in der Begrüßung */}
               <p className="text-sm text-gray-500">Hi, {getDisplayName(myProfile.full_name)}</p>
             </div>
             <div className="flex items-center gap-2">
@@ -1005,7 +1012,7 @@ export default function App() {
               )}
               
               <button onClick={() => navigateTo('termine')} className={`text-2xl font-bold ${currentView === 'termine' ? 'text-amber-500' : 'text-gray-500'}`}>📅 Termine</button>
-              <button onClick={() => navigateTo('songs')} className={`text-2xl font-bold ${currentView === 'songs' ? 'text-amber-500' : 'text-gray-500'}`}>🎵 Songs & Tabs</button>
+              <button onClick={() => navigateTo('songs')} className={`text-2xl font-bold ${currentView === 'songs' ? 'text-amber-500' : 'text-gray-500'}`}>🎵 Songs</button>
               <button onClick={() => navigateTo('setlisten')} className={`text-2xl font-bold ${currentView === 'setlisten' ? 'text-amber-500' : 'text-gray-500'}`}>📋 Setlisten</button>
               <button onClick={() => navigateTo('dateien')} className={`text-2xl font-bold ${currentView === 'dateien' ? 'text-amber-500' : 'text-gray-500'}`}>📁 Dateien</button>
               <button onClick={() => { navigateTo('kalender'); loadAbsenceFormDefaults(); }} className={`text-2xl font-bold ${currentView === 'kalender' ? 'text-amber-500' : 'text-gray-500'}`}>🌴 Kalender / Urlaub</button>
@@ -1109,115 +1116,6 @@ export default function App() {
                   })}
                   <div className="pt-4 mt-4 border-t border-gray-800 text-right pb-10 md:pb-0">
                     <p className="font-black text-gray-300">Gesamte Spielzeit: <span className="text-amber-500 text-xl">{formatDuration(setlistData.reduce((acc, set) => acc + set.songs.reduce((a:number, s:any) => a + parseDuration(s.duration), 0), 0))} Min</span></p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {selectedSetlistImage && (
-            <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center p-4">
-              <div className="bg-gray-900 border border-gray-800 w-full max-w-3xl max-h-[90dvh] max-w-[95vw] rounded-2xl p-4 shadow-2xl flex flex-col overflow-hidden">
-                <div className="flex justify-between items-center border-b border-gray-800 pb-3 mb-4">
-                  <h3 className="text-sm font-bold text-white uppercase tracking-wider">📜 Setlist Vorschau</h3>
-                  <button onClick={() => setSelectedSetlistImage(null)} className="p-1 bg-gray-950 border border-gray-800 rounded-lg text-sm font-bold px-3 py-1.5 text-gray-400 hover:text-white">Schließen</button>
-                </div>
-                <div className="overflow-y-auto flex-1 flex items-center justify-center">
-                  <img src={selectedSetlistImage} alt="Setlist" className="max-w-full h-auto object-contain rounded-xl border border-gray-800 shadow-inner" />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {selectedSong && !planningSetlistEvent && !planningSetlistTemplate && (
-            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-              <div className="bg-gray-900 border border-gray-800 w-full max-w-2xl max-h-[90dvh] max-w-[95vw] rounded-2xl p-6 shadow-2xl flex flex-col overflow-hidden">
-                <div className="flex justify-between items-start border-b border-gray-800 pb-3 mb-4 shrink-0">
-                  <div>
-                    <h3 className="text-lg font-black text-white">{selectedSong.title}</h3>
-                    <p className="text-sm text-amber-500 font-semibold">{selectedSong.artist || 'Unbekannter Interpret'}</p>
-                  </div>
-                  <button onClick={() => { setSelectedSong(null); setGeneratedPdfPreviewUrl(null); }} className="p-1 bg-gray-950 border border-gray-800 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white transition-colors text-sm font-bold px-3 py-1.5 shrink-0">Schließen</button>
-                </div>
-
-                <div className="space-y-4 flex-1 overflow-y-auto pr-1">
-                  {selectedSong.chords && (
-                    <div className="bg-gray-950 border border-gray-800 p-3.5 rounded-xl">
-                      <h4 className="text-[12px] font-black text-amber-400 uppercase tracking-widest mb-1.5">🎸 Akkorde</h4>
-                      <p className="text-sm font-mono text-gray-200 whitespace-pre-wrap">{selectedSong.chords}</p>
-                    </div>
-                  )}
-
-                  {(selectedSong.tab_link || selectedSong.pdf_url) && (
-                    <div className="flex flex-col gap-2">
-                      {selectedSong.tab_link && (
-                        <div className="bg-gray-950 border border-gray-800 p-3 rounded-xl flex items-center justify-between">
-                          <span className="text-sm font-bold text-gray-300">Gitarren Tabs:</span>
-                          <a href={selectedSong.tab_link} target="_blank" rel="noopener noreferrer" className="text-sm bg-amber-500 text-gray-950 font-bold px-3 py-1.5 rounded-lg hover:bg-amber-600 transition-colors">🌐 Tab öffnen</a>
-                        </div>
-                      )}
-                      
-                      {selectedSong.pdf_url && (
-                        <div className="bg-gray-950 border border-gray-800 p-3 rounded-xl flex items-center justify-between">
-                          <span className="text-sm font-bold text-gray-300">Noten PDF:</span>
-                          <a href={selectedSong.pdf_url} target="_blank" rel="noopener noreferrer" className="text-sm bg-red-500/20 text-red-400 border border-red-500/30 font-bold px-3 py-1.5 rounded-lg hover:bg-red-500/30 transition-colors">📄 PDF öffnen</a>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  <div className="bg-gray-950 border border-gray-800 p-4 rounded-xl">
-                    <div className="flex justify-between items-center mb-3">
-                      <h4 className="text-[12px] font-black text-gray-400 uppercase tracking-widest">📜 Songtext</h4>
-                      {selectedSong.lyrics && (
-                        <button type="button" onClick={() => generatePdfPreview(selectedSong.lyrics)} className="bg-gray-800 border border-gray-700 text-gray-200 px-3 py-1.5 rounded-lg text-sm font-bold hover:bg-gray-700 hover:text-white transition-colors flex items-center gap-1.5">📄 PDF Ansicht</button>
-                      )}
-                    </div>
-                    <p className="text-[16px] text-gray-200 whitespace-pre-wrap font-sans leading-relaxed">{selectedSong.lyrics || 'Kein Songtext hinterlegt.'}</p>
-                    
-                    {generatedPdfPreviewUrl && (
-                      <div className="mt-4 pt-4 border-t border-gray-800/80 animate-fade-in">
-                        <h4 className="text-[12px] font-black text-amber-500 uppercase tracking-widest mb-2">👀 PDF Vorschau</h4>
-                        <iframe src={generatedPdfPreviewUrl} width="100%" height="350px" className="border border-gray-700 rounded-xl bg-white w-full shadow-inner" title="PDF Vorschau" />
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {selectedDayDetails && (
-            <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-              <div className="bg-gray-900 border border-gray-800 w-full max-w-md max-h-[90dvh] max-w-[95vw] rounded-2xl p-6 shadow-2xl flex flex-col overflow-hidden">
-                <div className="flex justify-between items-start border-b border-gray-800 pb-3 mb-4 shrink-0">
-                  <div>
-                    <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider">Tagesdetails</h3>
-                    <p className="text-[16px] font-black text-white mt-0.5">{selectedDayDetails.dayLabel}</p>
-                  </div>
-                  <button onClick={() => setSelectedDayDetails(null)} className="p-1 bg-gray-950 border border-gray-800 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white transition-colors text-sm font-bold px-2.5 py-1 shrink-0">Schließen</button>
-                </div>
-
-                <div className="space-y-3 flex-1 overflow-y-auto pr-1">
-                  <div>
-                    <h4 className="text-[12px] font-black text-blue-400 uppercase tracking-widest mb-1.5">🎵 Termine & Gigs</h4>
-                    {selectedDayDetails.events.length === 0 ? (
-                      <p className="text-sm text-gray-600 italic">Keine Termine an diesem Tag.</p>
-                    ) : (
-                      selectedDayDetails.events.map(e => (
-                        <div key={e.id} className="bg-gray-950 border border-gray-850 p-2.5 rounded-xl text-sm space-y-1 mb-2">
-                          <div className="flex justify-between font-bold text-gray-200">
-                            <span>{e.title}</span>
-                            <span className="text-blue-400 uppercase text-[10px] border border-blue-500/20 bg-blue-500/5 px-1.5 rounded">{e.event_type}</span>
-                          </div>
-                          <div className="text-gray-400 text-[12px]">🕒 Uhrzeit: {e.event_time.substring(0,5)} Uhr</div>
-                          {e.location && <div className="text-gray-500 text-[12px]">📍 Ort: {e.location}</div>}
-                          <div className="pt-1.5 border-t border-gray-800/60 mt-2">
-                            <button type="button" onClick={() => handleDeleteEvent(e.id)} className="text-[12px] text-red-400 hover:underline">🗑️ Aus diesem Tag löschen</button>
-                          </div>
-                        </div>
-                      ))
-                    )}
                   </div>
                 </div>
               </div>
@@ -1329,12 +1227,12 @@ export default function App() {
               {isAddingSong && (
                 <form onSubmit={handleAddSong} className="bg-gray-900/90 border border-amber-500/20 p-5 rounded-2xl space-y-4 shadow-lg">
                   <h3 className="font-bold text-amber-500 text-sm uppercase mb-2">{editingSongId ? '✏️ Song bearbeiten' : '➕ Neuen Song anlegen'}</h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div>
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                    <div className="sm:col-span-2">
                       <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Songtitel</label>
                       <input type="text" value={songTitle} onChange={(e) => setSongTitle(e.target.value)} placeholder="z.B. Knockin' on Heaven's Door" className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500" required />
                     </div>
-                    <div>
+                    <div className="sm:col-span-2">
                       <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Interpret</label>
                       <input type="text" value={songArtist} onChange={(e) => setSongArtist(e.target.value)} placeholder="z.B. Bob Dylan" className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500" />
                     </div>
@@ -1342,27 +1240,24 @@ export default function App() {
                       <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Dauer (MM:SS)</label>
                       <input type="text" value={songDuration} onChange={(e) => setSongDuration(e.target.value)} placeholder="03:25" pattern="[0-9]{1,2}:[0-5][0-9]" title="Bitte im Format MM:SS eingeben (z.B. 03:25)" className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500 font-mono" />
                     </div>
+                    <div>
+                      <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">BPM</label>
+                      <input type="text" value={songBpm} onChange={(e) => setSongBpm(e.target.value)} placeholder="z.B. 120" className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500 font-mono" />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Tonart</label>
+                      <input type="text" value={songKey} onChange={(e) => setSongKey(e.target.value)} placeholder="z.B. C-Dur / Am" className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500" />
+                    </div>
                   </div>
                   
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 gap-3">
                     <div>
                       <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Link für Gitarren Tabs</label>
                       <input type="url" value={songTabLink} onChange={(e) => setSongTabLink(e.target.value)} placeholder="https://www.ultimate-guitar.com/..." className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500" />
                     </div>
                     <div>
-                      <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Link zum PDF</label>
-                      <input type="url" value={songPdfUrl} onChange={(e) => setSongPdfUrl(e.target.value)} placeholder="https://..." className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500" />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Akkorde</label>
-                      <textarea value={songChords} onChange={(e) => setSongChords(e.target.value)} placeholder="z.B. G - D - Am - C" rows={4} className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white font-mono focus:outline-none focus:border-amber-500 resize-none" />
-                    </div>
-                    <div>
                       <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Songtext (Lyrics)</label>
-                      <textarea value={songLyrics} onChange={(e) => setSongLyrics(e.target.value)} placeholder="Strophe 1..." rows={4} className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500 resize-none" />
+                      <textarea value={songLyrics} onChange={(e) => setSongLyrics(e.target.value)} placeholder="Strophe 1..." rows={6} className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500 resize-none" />
                     </div>
                   </div>
                   <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[16px] rounded-xl py-2.5 transition-colors">{editingSongId ? 'Änderungen speichern' : 'Song speichern'}</button>
@@ -1382,10 +1277,10 @@ export default function App() {
                       <div onClick={() => setSelectedSong(song)} className="cursor-pointer">
                         <div className="flex justify-between items-start">
                           <h3 className="text-[16px] font-bold text-gray-100 group-hover:text-amber-400 transition-colors">{song.title}</h3>
-                          <div className="flex gap-1 text-[10px] font-bold">
+                          <div className="flex gap-1 text-[10px] font-bold flex-wrap justify-end">
                             {song.duration && <span className="bg-gray-800 text-gray-300 px-1.5 py-0.5 rounded font-mono">⏱ {song.duration}</span>}
-                            {song.tab_link && <span className="bg-blue-500/10 text-blue-400 border border-blue-500/20 px-1.5 py-0.5 rounded">Tabs 🎸</span>}
-                            {song.pdf_url && <span className="bg-red-500/10 text-red-400 border border-red-500/20 px-1.5 py-0.5 rounded">PDF 📄</span>}
+                            {song.bpm && <span className="bg-blue-500/10 text-blue-400 border border-blue-500/20 px-1.5 py-0.5 rounded font-mono">{song.bpm} BPM</span>}
+                            {song.tonart && <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-1.5 py-0.5 rounded">{song.tonart}</span>}
                           </div>
                         </div>
                         <p className="text-sm text-gray-400 mt-0.5">{song.artist || 'Unbekannter Interpret'}</p>
@@ -1400,6 +1295,46 @@ export default function App() {
                     </div>
                   ))
                 )}
+              </div>
+            </div>
+          )}
+
+          {selectedSong && !planningSetlistEvent && !planningSetlistTemplate && (
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+              <div className="bg-gray-900 border border-gray-800 w-full max-w-2xl max-h-[90dvh] max-w-[95vw] rounded-2xl p-6 shadow-2xl flex flex-col overflow-hidden">
+                <div className="flex justify-between items-start border-b border-gray-800 pb-3 mb-4 shrink-0">
+                  <div>
+                    <h3 className="text-lg font-black text-white">{selectedSong.title}</h3>
+                    <p className="text-sm text-amber-500 font-semibold">{selectedSong.artist || 'Unbekannter Interpret'}</p>
+                  </div>
+                  <button onClick={() => setSelectedSong(null)} className="p-1 bg-gray-950 border border-gray-800 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white transition-colors text-sm font-bold px-3 py-1.5 shrink-0">Schließen</button>
+                </div>
+
+                <div className="space-y-4 flex-1 overflow-y-auto pr-1">
+                  
+                  <div className="flex gap-2 flex-wrap text-sm font-bold">
+                    {selectedSong.duration && <span className="bg-gray-950 border border-gray-800 text-gray-300 px-3 py-1.5 rounded-lg font-mono">⏱ {selectedSong.duration}</span>}
+                    {selectedSong.bpm && <span className="bg-blue-500/10 border border-blue-500/20 text-blue-400 px-3 py-1.5 rounded-lg font-mono">{selectedSong.bpm} BPM</span>}
+                    {selectedSong.tonart && <span className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-3 py-1.5 rounded-lg">{selectedSong.tonart}</span>}
+                  </div>
+
+                  {selectedSong.tab_link && (
+                    <div className="bg-gray-950 border border-gray-800 p-3 rounded-xl flex items-center justify-between">
+                      <span className="text-sm font-bold text-gray-300">Gitarren Tabs:</span>
+                      <a href={selectedSong.tab_link} target="_blank" rel="noopener noreferrer" className="text-sm bg-amber-500 text-gray-950 font-bold px-3 py-1.5 rounded-lg hover:bg-amber-600 transition-colors">🌐 Tab öffnen</a>
+                    </div>
+                  )}
+
+                  <div className="bg-gray-950 border border-gray-800 p-4 rounded-xl">
+                    <div className="flex justify-between items-center mb-3">
+                      <h4 className="text-[12px] font-black text-gray-400 uppercase tracking-widest">📜 Songtext</h4>
+                      {selectedSong.lyrics && (
+                        <button type="button" onClick={() => downloadLyricsPdf(selectedSong)} className="bg-gray-800 border border-gray-700 text-gray-200 px-3 py-1.5 rounded-lg text-sm font-bold hover:bg-gray-700 hover:text-white transition-colors flex items-center gap-1.5">⬇️ Text als PDF laden</button>
+                      )}
+                    </div>
+                    <p className="text-[16px] text-gray-200 whitespace-pre-wrap font-sans leading-relaxed">{selectedSong.lyrics || 'Kein Songtext hinterlegt.'}</p>
+                  </div>
+                </div>
               </div>
             </div>
           )}
