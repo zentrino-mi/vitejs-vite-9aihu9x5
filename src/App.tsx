@@ -57,14 +57,12 @@ export default function App() {
   const [songLyrics, setSongLyrics] = useState('');
   const [songTabLink, setSongTabLink] = useState('');
 
-  // --- NEU: Bandkassen States ---
   const [fundBalance, setFundBalance] = useState<number>(0);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [transAmount, setTransAmount] = useState('');
   const [transReason, setTransReason] = useState('');
   const [transType, setTransType] = useState<'+' | '-'>('+');
   const [isSubmittingTrans, setIsSubmittingTrans] = useState(false);
-  // ------------------------------
 
   const [currentCalendarDate, setCurrentCalendarDate] = useState(new Date());
   const [selectedDayDetails, setSelectedDayDetails] = useState<{ dayLabel: string; events: any[]; absences: any[] } | null>(null);
@@ -80,6 +78,14 @@ export default function App() {
   const [eventDescription, setEventDescription] = useState('');
   const [eventType, setEventType] = useState<'Probe' | 'Auftritt' | 'Band-Event'>('Probe');
   
+  // --- NEU: Auftritts-Details States ---
+  const [eventGage, setEventGage] = useState('');
+  const [eventPlayTime, setEventPlayTime] = useState('');
+  const [eventPlayTimeStart, setEventPlayTimeStart] = useState('');
+  const [eventPlayTimeEnd, setEventPlayTimeEnd] = useState('');
+  const [eventSoundcheck, setEventSoundcheck] = useState('');
+  // -------------------------------------
+
   const [saveAsDefault, setSaveAsDefault] = useState(false);
 
   const [eventSetlistImage, setEventSetlistImage] = useState(''); 
@@ -154,7 +160,7 @@ export default function App() {
       fetchSetlists(), 
       fetchBandFiles(), 
       fetchFundBalance(),
-      fetchTransactions() // Holt jetzt auch den Verlauf
+      fetchTransactions()
     ]);
   };
 
@@ -219,7 +225,6 @@ export default function App() {
     }
   };
 
-  // --- NEU: Transaktionen laden & speichern ---
   const fetchTransactions = async () => {
     const { data } = await supabase.from('band_fund_transactions').select('*').order('created_at', { ascending: false });
     if (data) setTransactions(data);
@@ -239,11 +244,9 @@ export default function App() {
     const actualAmount = transType === '+' ? numValue : -numValue;
     const newBalance = fundBalance + actualAmount;
 
-    // 1. Kassenstand in der Datenbank updaten
     const { error: balanceError } = await supabase.from('band_fund').update({ balance: newBalance }).eq('id', 1);
 
     if (!balanceError) {
-      // 2. Den Verlaufseintrag (Historie) in die DB schreiben
       const { error: transError } = await supabase.from('band_fund_transactions').insert([
         { amount: numValue, reason: transReason, transaction_type: transType, created_by: session.user.id }
       ]);
@@ -252,7 +255,7 @@ export default function App() {
         setFundBalance(newBalance);
         setTransAmount('');
         setTransReason('');
-        fetchTransactions(); // Lädt die Historie sofort neu
+        fetchTransactions(); 
       } else {
         alert('Fehler beim Speichern des Verlaufs: ' + transError.message);
       }
@@ -262,7 +265,6 @@ export default function App() {
     
     setIsSubmittingTrans(false);
   };
-  // ------------------------------------------
 
   const handleSetlistImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -361,6 +363,16 @@ export default function App() {
     const m = Math.floor(totalSecs / 60);
     const s = totalSecs % 60;
     return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
+  // Hilfsfunktion: Wandelt 2.5 in "2h 30m" um
+  const formatDecimalHours = (val: any) => {
+    if (!val) return '';
+    const num = parseFloat(val);
+    if (isNaN(num)) return '';
+    const h = Math.floor(num);
+    const m = Math.round((num - h) * 60);
+    return `${h}h ${m > 0 ? m + 'm' : ''}`.trim();
   };
 
   const handleAddSong = async (e: React.FormEvent) => {
@@ -699,6 +711,11 @@ export default function App() {
       description: eventDescription,
       event_type: eventType,
       setlist_image: eventType === 'Auftritt' ? finalImageUrl : null, 
+      gage: eventType === 'Auftritt' && eventGage ? parseFloat(eventGage.replace(',', '.')) : null,
+      play_time_hours: eventType === 'Auftritt' && eventPlayTime ? parseFloat(eventPlayTime.replace(',', '.')) : null,
+      play_time_start: eventType === 'Auftritt' ? eventPlayTimeStart : null,
+      play_time_end: eventType === 'Auftritt' ? eventPlayTimeEnd : null,
+      soundcheck_time: eventType === 'Auftritt' ? eventSoundcheck : null,
     };
 
     let savedEventId = editingEventId;
@@ -774,6 +791,11 @@ export default function App() {
     setEventType(ev.event_type || 'Probe');
     setEventSetlistImage(ev.setlist_image || '');
     setSetlistFile(null);
+    setEventGage(ev.gage ? ev.gage.toString() : '');
+    setEventPlayTime(ev.play_time_hours ? ev.play_time_hours.toString() : '');
+    setEventPlayTimeStart(ev.play_time_start || '');
+    setEventPlayTimeEnd(ev.play_time_end || '');
+    setEventSoundcheck(ev.soundcheck_time || '');
     setSaveAsDefault(false);
     setIsAddingEvent(true); 
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -802,6 +824,11 @@ export default function App() {
     setEventMapsLink('');
     setEventDescription('');
     setEventSetlistImage('');
+    setEventGage('');
+    setEventPlayTime('');
+    setEventPlayTimeStart('');
+    setEventPlayTimeEnd('');
+    setEventSoundcheck('');
     setSetlistFile(null);
     setEditingEventId(null);
     setIsAddingEvent(true); 
@@ -815,6 +842,7 @@ export default function App() {
   const resetForm = () => {
     setEventTitle(''); setEventDate(''); setEventTime(''); setEventLocation(''); setEventMapsLink(''); setEventDescription('');
     setEventType('Probe'); setEventSetlistImage(''); setSetlistFile(null); setEditingEventId(null); setSaveAsDefault(false);
+    setEventGage(''); setEventPlayTime(''); setEventPlayTimeStart(''); setEventPlayTimeEnd(''); setEventSoundcheck('');
     setIsAddingEvent(false); 
   };
 
@@ -1461,7 +1489,7 @@ export default function App() {
                       <input type="time" value={eventTime} onChange={(e) => setEventTime(e.target.value)} className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500" required />
                     </div>
                   </div>
-                  
+
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Location</label>
@@ -1473,18 +1501,49 @@ export default function App() {
                     </div>
                   </div>
 
+                  {/* NEU: Zusätzliche Auftritts-Details */}
                   {eventType === 'Auftritt' && (
-                    <div className="bg-gray-950 border border-gray-850 p-4 rounded-xl space-y-3">
-                      <label className="block text-[12px] text-amber-400 font-bold uppercase">📜 Setlist Bild für den Auftritt</label>
-                      <div className="flex gap-2 items-center flex-wrap">
-                        <input type="file" accept="image/*" onChange={handleSetlistImageUpload} className="text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-bold file:bg-amber-500 file:text-gray-950 hover:file:bg-amber-600 cursor-pointer" />
-                      </div>
-                      {eventSetlistImage && (
-                        <div className="relative w-24 h-24 border border-gray-700 rounded-lg overflow-hidden group">
-                          <img src={eventSetlistImage} alt="Setlist Vorschau" className="w-full h-full object-cover" />
-                          <button type="button" onClick={() => { setEventSetlistImage(''); setSetlistFile(null); }} className="absolute inset-0 bg-black/60 text-white opacity-0 group-hover:opacity-100 flex items-center justify-center text-sm font-bold transition-opacity">Löschen</button>
+                    <div className="bg-purple-950/20 border border-purple-900/30 p-4 rounded-xl space-y-4">
+                      <h4 className="text-[12px] font-black text-purple-400 uppercase tracking-widest">🎤 Auftritts-Details</h4>
+                      
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Gage (€)</label>
+                          <input type="number" step="0.01" value={eventGage} onChange={(e) => setEventGage(e.target.value)} placeholder="z.B. 500" className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500 font-mono" />
                         </div>
-                      )}
+                        <div>
+                          <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Spielzeit (Stunden, z.B. 2.5)</label>
+                          <input type="number" step="0.1" value={eventPlayTime} onChange={(e) => setEventPlayTime(e.target.value)} placeholder="z.B. 2.5" className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500 font-mono" />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div>
+                          <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Soundcheck</label>
+                          <input type="time" value={eventSoundcheck} onChange={(e) => setEventSoundcheck(e.target.value)} className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500" />
+                        </div>
+                        <div>
+                          <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Spielbeginn</label>
+                          <input type="time" value={eventPlayTimeStart} onChange={(e) => setEventPlayTimeStart(e.target.value)} className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500" />
+                        </div>
+                        <div>
+                          <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Spielende</label>
+                          <input type="time" value={eventPlayTimeEnd} onChange={(e) => setEventPlayTimeEnd(e.target.value)} className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500" />
+                        </div>
+                      </div>
+
+                      <div className="space-y-3 pt-2 border-t border-purple-900/30">
+                        <label className="block text-[12px] text-amber-400 font-bold uppercase pt-2">📜 Setlist Bild für den Auftritt</label>
+                        <div className="flex gap-2 items-center flex-wrap">
+                          <input type="file" accept="image/*" onChange={handleSetlistImageUpload} className="text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-bold file:bg-amber-500 file:text-gray-950 hover:file:bg-amber-600 cursor-pointer" />
+                        </div>
+                        {eventSetlistImage && (
+                          <div className="relative w-24 h-24 border border-gray-700 rounded-lg overflow-hidden group">
+                            <img src={eventSetlistImage} alt="Setlist Vorschau" className="w-full h-full object-cover" />
+                            <button type="button" onClick={() => { setEventSetlistImage(''); setSetlistFile(null); }} className="absolute inset-0 bg-black/60 text-white opacity-0 group-hover:opacity-100 flex items-center justify-center text-sm font-bold transition-opacity">Löschen</button>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
 
@@ -1602,17 +1661,53 @@ export default function App() {
 
                               {isExpanded && (
                                 <div className="mt-4 p-4 bg-gray-950 border border-gray-800 rounded-xl space-y-4 text-sm relative z-10">
+                                  
+                                  {/* NEU: Auftritts-Details im Profil */}
+                                  {ev.event_type === 'Auftritt' && (
+                                    <div className="bg-purple-950/20 border border-purple-900/30 p-3 rounded-xl mb-3 space-y-2">
+                                      <h4 className="font-bold text-purple-400 uppercase tracking-wider text-[12px] mb-1 flex justify-between items-center">
+                                        <span>🎤 Auftritts-Details</span>
+                                        {(myProfile.can_manage_events || myProfile.is_admin) && ev.gage && (
+                                          <span className="text-emerald-400 font-mono text-sm bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                                            Gage: {ev.gage} €
+                                          </span>
+                                        )}
+                                      </h4>
+                                      
+                                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
+                                        {ev.soundcheck_time && (
+                                          <div className="bg-gray-950 border border-gray-800 p-2 rounded-lg">
+                                            <span className="block text-[10px] text-gray-500 uppercase font-bold">Soundcheck</span>
+                                            <span className="text-gray-200 font-mono">{ev.soundcheck_time} Uhr</span>
+                                          </div>
+                                        )}
+                                        {(ev.play_time_start || ev.play_time_end) && (
+                                          <div className="bg-gray-950 border border-gray-800 p-2 rounded-lg">
+                                            <span className="block text-[10px] text-gray-500 uppercase font-bold">Showtime</span>
+                                            <span className="text-gray-200 font-mono">{ev.play_time_start || '?'} - {ev.play_time_end || '?'} Uhr</span>
+                                          </div>
+                                        )}
+                                        {ev.play_time_hours && (
+                                          <div className="bg-gray-950 border border-gray-800 p-2 rounded-lg">
+                                            <span className="block text-[10px] text-gray-500 uppercase font-bold">Spielzeit gesamt</span>
+                                            <span className="text-gray-200">{formatDecimalHours(ev.play_time_hours)}</span>
+                                          </div>
+                                        )}
+                                      </div>
+
+                                      {ev.setlist_image && (
+                                        <div className="mt-3 pt-3 border-t border-purple-900/30 flex items-center justify-between">
+                                          <span className="font-bold text-purple-400 text-sm">📜 Setlist hinterlegt</span>
+                                          <button onClick={() => setSelectedSetlistImage(ev.setlist_image)} className="bg-purple-600 hover:bg-purple-700 text-white font-bold px-3 py-1.5 rounded-lg text-sm transition-colors">Bild anzeigen</button>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+
                                   {ev.description && (
                                     <div>
                                       <h4 className="font-bold text-gray-400 uppercase tracking-wider text-[12px] mb-1">ℹ️ Notizen & Infos:</h4>
                                       <p className="text-gray-300 bg-gray-900/40 p-3 rounded-lg border border-gray-800 italic whitespace-pre-wrap">{ev.description}</p>
-                                    </div>
-                                  )}
-
-                                  {ev.event_type === 'Auftritt' && ev.setlist_image && (
-                                    <div className="bg-purple-950/20 border border-purple-900/30 p-3 rounded-xl flex items-center justify-between">
-                                      <span className="font-bold text-purple-400">📜 Setlist hinterlegt</span>
-                                      <button onClick={() => setSelectedSetlistImage(ev.setlist_image)} className="bg-purple-600 hover:bg-purple-700 text-white font-bold px-3 py-1.5 rounded-lg text-sm transition-colors">Bild anzeigen</button>
                                     </div>
                                   )}
 
@@ -1865,7 +1960,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* NEU: Transaktions-Formular (Nur für Admins) */}
               {myProfile.is_admin && (
                 <form onSubmit={handleAddTransaction} className="bg-gray-900/90 border border-amber-500/20 p-6 rounded-2xl space-y-4 shadow-lg">
                   <h3 className="text-sm font-bold uppercase text-amber-500 tracking-wider mb-2">⚙️ Neue Buchung eintragen</h3>
@@ -1891,7 +1985,6 @@ export default function App() {
                 </form>
               )}
 
-              {/* NEU: Das Kassenbuch (Verlauf) */}
               <div className="bg-gray-900/60 border border-gray-800 p-5 rounded-2xl space-y-4">
                 <h3 className="text-sm font-bold uppercase text-gray-400 tracking-wider">📜 Transaktionsverlauf</h3>
                 
