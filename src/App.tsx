@@ -78,13 +78,11 @@ export default function App() {
   const [eventDescription, setEventDescription] = useState('');
   const [eventType, setEventType] = useState<'Probe' | 'Auftritt' | 'Band-Event'>('Probe');
   
-  // --- NEU: Auftritts-Details States ---
   const [eventGage, setEventGage] = useState('');
   const [eventPlayTime, setEventPlayTime] = useState('');
   const [eventPlayTimeStart, setEventPlayTimeStart] = useState('');
   const [eventPlayTimeEnd, setEventPlayTimeEnd] = useState('');
   const [eventSoundcheck, setEventSoundcheck] = useState('');
-  // -------------------------------------
 
   const [saveAsDefault, setSaveAsDefault] = useState(false);
 
@@ -365,7 +363,6 @@ export default function App() {
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
-  // Hilfsfunktion: Wandelt 2.5 in "2h 30m" um
   const formatDecimalHours = (val: any) => {
     if (!val) return '';
     const num = parseFloat(val);
@@ -698,7 +695,7 @@ export default function App() {
         const { data } = supabase.storage.from('setlists').getPublicUrl(fileName);
         finalImageUrl = data.publicUrl;
       } else if (uploadError) {
-        alert('Fehler beim Bild-Upload: ' + uploadError.message);
+        alert('Fehler beim Datei-Upload: ' + uploadError.message);
       }
     }
 
@@ -1185,11 +1182,15 @@ export default function App() {
             <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center p-4">
               <div className="bg-gray-900 border border-gray-800 w-full max-w-3xl max-h-[90dvh] max-w-[95vw] rounded-2xl p-4 shadow-2xl flex flex-col overflow-hidden">
                 <div className="flex justify-between items-center border-b border-gray-800 pb-3 mb-4">
-                  <h3 className="text-sm font-bold text-white uppercase tracking-wider">📜 Setlist Vorschau</h3>
+                  <h3 className="text-sm font-bold text-white uppercase tracking-wider">📜 Anhang Vorschau</h3>
                   <button onClick={() => setSelectedSetlistImage(null)} className="p-1 bg-gray-950 border border-gray-800 rounded-lg text-sm font-bold px-3 py-1.5 text-gray-400 hover:text-white">Schließen</button>
                 </div>
                 <div className="overflow-y-auto flex-1 flex items-center justify-center">
-                  <img src={selectedSetlistImage} alt="Setlist" className="max-w-full h-auto object-contain rounded-xl border border-gray-800 shadow-inner" />
+                  {selectedSetlistImage.toLowerCase().endsWith('.pdf') ? (
+                    <iframe src={selectedSetlistImage} width="100%" height="500px" className="border border-gray-700 rounded-xl bg-white w-full" title="PDF Vorschau" />
+                  ) : (
+                    <img src={selectedSetlistImage} alt="Anhang" className="max-w-full h-auto object-contain rounded-xl border border-gray-800 shadow-inner" />
+                  )}
                 </div>
               </div>
             </div>
@@ -1501,7 +1502,6 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* NEU: Zusätzliche Auftritts-Details */}
                   {eventType === 'Auftritt' && (
                     <div className="bg-purple-950/20 border border-purple-900/30 p-4 rounded-xl space-y-4">
                       <h4 className="text-[12px] font-black text-purple-400 uppercase tracking-widest">🎤 Auftritts-Details</h4>
@@ -1533,14 +1533,15 @@ export default function App() {
                       </div>
 
                       <div className="space-y-3 pt-2 border-t border-purple-900/30">
-                        <label className="block text-[12px] text-amber-400 font-bold uppercase pt-2">📜 Setlist Bild für den Auftritt</label>
+                        <label className="block text-[12px] text-amber-400 font-bold uppercase pt-2">📜 Anhang für den Auftritt (Bild oder PDF)</label>
                         <div className="flex gap-2 items-center flex-wrap">
-                          <input type="file" accept="image/*" onChange={handleSetlistImageUpload} className="text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-bold file:bg-amber-500 file:text-gray-950 hover:file:bg-amber-600 cursor-pointer" />
+                          {/* NEU: Erlaubt jetzt Bilder UND PDFs */}
+                          <input type="file" accept="image/*,application/pdf" onChange={handleSetlistImageUpload} className="text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-bold file:bg-amber-500 file:text-gray-950 hover:file:bg-amber-600 cursor-pointer" />
                         </div>
                         {eventSetlistImage && (
-                          <div className="relative w-24 h-24 border border-gray-700 rounded-lg overflow-hidden group">
-                            <img src={eventSetlistImage} alt="Setlist Vorschau" className="w-full h-full object-cover" />
-                            <button type="button" onClick={() => { setEventSetlistImage(''); setSetlistFile(null); }} className="absolute inset-0 bg-black/60 text-white opacity-0 group-hover:opacity-100 flex items-center justify-center text-sm font-bold transition-opacity">Löschen</button>
+                          <div className="flex items-center gap-3 bg-gray-950 p-2.5 rounded-xl border border-gray-800 w-fit">
+                            <span className="text-xs text-amber-400 font-bold truncate max-w-[200px]">Datei hinterlegt</span>
+                            <button type="button" onClick={() => { setEventSetlistImage(''); setSetlistFile(null); }} className="text-red-400 text-xs font-bold hover:underline">Löschen</button>
                           </div>
                         )}
                       </div>
@@ -1662,7 +1663,6 @@ export default function App() {
                               {isExpanded && (
                                 <div className="mt-4 p-4 bg-gray-950 border border-gray-800 rounded-xl space-y-4 text-sm relative z-10">
                                   
-                                  {/* NEU: Auftritts-Details im Profil */}
                                   {ev.event_type === 'Auftritt' && (
                                     <div className="bg-purple-950/20 border border-purple-900/30 p-3 rounded-xl mb-3 space-y-2">
                                       <h4 className="font-bold text-purple-400 uppercase tracking-wider text-[12px] mb-1 flex justify-between items-center">
@@ -1697,8 +1697,8 @@ export default function App() {
 
                                       {ev.setlist_image && (
                                         <div className="mt-3 pt-3 border-t border-purple-900/30 flex items-center justify-between">
-                                          <span className="font-bold text-purple-400 text-sm">📜 Setlist hinterlegt</span>
-                                          <button onClick={() => setSelectedSetlistImage(ev.setlist_image)} className="bg-purple-600 hover:bg-purple-700 text-white font-bold px-3 py-1.5 rounded-lg text-sm transition-colors">Bild anzeigen</button>
+                                          <span className="font-bold text-purple-400 text-sm">📜 Anhang (Setlist/Plan)</span>
+                                          <button onClick={() => setSelectedSetlistImage(ev.setlist_image)} className="bg-purple-600 hover:bg-purple-700 text-white font-bold px-3 py-1.5 rounded-lg text-sm transition-colors">Öffnen</button>
                                         </div>
                                       )}
                                     </div>
