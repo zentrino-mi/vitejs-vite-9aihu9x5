@@ -57,8 +57,14 @@ export default function App() {
   const [songLyrics, setSongLyrics] = useState('');
   const [songTabLink, setSongTabLink] = useState('');
 
+  // --- NEU: Bandkassen States ---
   const [fundBalance, setFundBalance] = useState<number>(0);
-  const [newBalanceInput, setNewBalanceInput] = useState<string>('');
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [transAmount, setTransAmount] = useState('');
+  const [transReason, setTransReason] = useState('');
+  const [transType, setTransType] = useState<'+' | '-'>('+');
+  const [isSubmittingTrans, setIsSubmittingTrans] = useState(false);
+  // ------------------------------
 
   const [currentCalendarDate, setCurrentCalendarDate] = useState(new Date());
   const [selectedDayDetails, setSelectedDayDetails] = useState<{ dayLabel: string; events: any[]; absences: any[] } | null>(null);
@@ -123,6 +129,7 @@ export default function App() {
         setSongs([]);
         setSavedSetlists([]);
         setBandFiles([]);
+        setTransactions([]);
         setCurrentView('termine');
         setIsLoading(false);
       }
@@ -146,7 +153,8 @@ export default function App() {
       fetchSongs(),
       fetchSetlists(), 
       fetchBandFiles(), 
-      fetchFundBalance()
+      fetchFundBalance(),
+      fetchTransactions() // Holt jetzt auch den Verlauf
     ]);
   };
 
@@ -208,30 +216,53 @@ export default function App() {
     const { data, error } = await supabase.from('band_fund').select('balance').eq('id', 1).single();
     if (data && !error) {
       setFundBalance(data.balance);
-      setNewBalanceInput(data.balance.toString());
     }
   };
 
-  const handleUpdateFundBalance = async (e: React.FormEvent) => {
+  // --- NEU: Transaktionen laden & speichern ---
+  const fetchTransactions = async () => {
+    const { data } = await supabase.from('band_fund_transactions').select('*').order('created_at', { ascending: false });
+    if (data) setTransactions(data);
+  };
+
+  const handleAddTransaction = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!myProfile.is_admin) return;
 
-    const numValue = parseFloat(newBalanceInput.replace(',', '.'));
-    if (isNaN(numValue)) {
-      alert('Bitte eine gültige Zahl eingeben.');
+    const numValue = parseFloat(transAmount.replace(',', '.'));
+    if (isNaN(numValue) || numValue <= 0) {
+      alert('Bitte einen gültigen Betrag größer als 0 eingeben.');
       return;
     }
 
-    const { error } = await supabase.from('band_fund').update({ balance: numValue }).eq('id', 1);
-    
-    if (!error) {
-      setFundBalance(numValue);
-      setNewBalanceInput(numValue.toString());
-      alert('Kassenstand wurde erfolgreich aktualisiert!');
+    setIsSubmittingTrans(true);
+    const actualAmount = transType === '+' ? numValue : -numValue;
+    const newBalance = fundBalance + actualAmount;
+
+    // 1. Kassenstand in der Datenbank updaten
+    const { error: balanceError } = await supabase.from('band_fund').update({ balance: newBalance }).eq('id', 1);
+
+    if (!balanceError) {
+      // 2. Den Verlaufseintrag (Historie) in die DB schreiben
+      const { error: transError } = await supabase.from('band_fund_transactions').insert([
+        { amount: numValue, reason: transReason, transaction_type: transType, created_by: session.user.id }
+      ]);
+      
+      if (!transError) {
+        setFundBalance(newBalance);
+        setTransAmount('');
+        setTransReason('');
+        fetchTransactions(); // Lädt die Historie sofort neu
+      } else {
+        alert('Fehler beim Speichern des Verlaufs: ' + transError.message);
+      }
     } else {
-      alert('Fehler beim Speichern: ' + error.message);
+      alert('Fehler beim Aktualisieren des Kassenstands: ' + balanceError.message);
     }
+    
+    setIsSubmittingTrans(false);
   };
+  // ------------------------------------------
 
   const handleSetlistImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1122,6 +1153,97 @@ export default function App() {
             </div>
           )}
 
+          {selectedSetlistImage && (
+            <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center p-4">
+              <div className="bg-gray-900 border border-gray-800 w-full max-w-3xl max-h-[90dvh] max-w-[95vw] rounded-2xl p-4 shadow-2xl flex flex-col overflow-hidden">
+                <div className="flex justify-between items-center border-b border-gray-800 pb-3 mb-4">
+                  <h3 className="text-sm font-bold text-white uppercase tracking-wider">📜 Setlist Vorschau</h3>
+                  <button onClick={() => setSelectedSetlistImage(null)} className="p-1 bg-gray-950 border border-gray-800 rounded-lg text-sm font-bold px-3 py-1.5 text-gray-400 hover:text-white">Schließen</button>
+                </div>
+                <div className="overflow-y-auto flex-1 flex items-center justify-center">
+                  <img src={selectedSetlistImage} alt="Setlist" className="max-w-full h-auto object-contain rounded-xl border border-gray-800 shadow-inner" />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {selectedSong && !planningSetlistEvent && !planningSetlistTemplate && (
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+              <div className="bg-gray-900 border border-gray-800 w-full max-w-2xl max-h-[90dvh] max-w-[95vw] rounded-2xl p-6 shadow-2xl flex flex-col overflow-hidden">
+                <div className="flex justify-between items-start border-b border-gray-800 pb-3 mb-4 shrink-0">
+                  <div>
+                    <h3 className="text-lg font-black text-white">{selectedSong.title}</h3>
+                    <p className="text-sm text-amber-500 font-semibold">{selectedSong.artist || 'Unbekannter Interpret'}</p>
+                  </div>
+                  <button onClick={() => setSelectedSong(null)} className="p-1 bg-gray-950 border border-gray-800 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white transition-colors text-sm font-bold px-3 py-1.5 shrink-0">Schließen</button>
+                </div>
+
+                <div className="space-y-4 flex-1 overflow-y-auto pr-1">
+                  
+                  <div className="flex gap-2 flex-wrap text-sm font-bold">
+                    {selectedSong.duration && <span className="bg-gray-950 border border-gray-800 text-gray-300 px-3 py-1.5 rounded-lg font-mono">⏱ {selectedSong.duration}</span>}
+                    {selectedSong.bpm && <span className="bg-blue-500/10 border border-blue-500/20 text-blue-400 px-3 py-1.5 rounded-lg font-mono">{selectedSong.bpm} BPM</span>}
+                    {selectedSong.tonart && <span className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-3 py-1.5 rounded-lg">{selectedSong.tonart}</span>}
+                  </div>
+
+                  {selectedSong.tab_link && (
+                    <div className="bg-gray-950 border border-gray-800 p-3 rounded-xl flex items-center justify-between">
+                      <span className="text-sm font-bold text-gray-300">Gitarren Tabs:</span>
+                      <a href={selectedSong.tab_link} target="_blank" rel="noopener noreferrer" className="text-sm bg-amber-500 text-gray-950 font-bold px-3 py-1.5 rounded-lg hover:bg-amber-600 transition-colors">🌐 Tab öffnen</a>
+                    </div>
+                  )}
+
+                  <div className="bg-gray-950 border border-gray-800 p-4 rounded-xl">
+                    <div className="flex justify-between items-center mb-3">
+                      <h4 className="text-[12px] font-black text-gray-400 uppercase tracking-widest">📜 Songtext</h4>
+                      {selectedSong.lyrics && (
+                        <button type="button" onClick={() => downloadLyricsPdf(selectedSong)} className="bg-gray-800 border border-gray-700 text-gray-200 px-3 py-1.5 rounded-lg text-sm font-bold hover:bg-gray-700 hover:text-white transition-colors flex items-center gap-1.5">⬇️ Text als PDF laden</button>
+                      )}
+                    </div>
+                    <p className="text-[16px] text-gray-200 whitespace-pre-wrap font-sans leading-relaxed">{selectedSong.lyrics || 'Kein Songtext hinterlegt.'}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {selectedDayDetails && (
+            <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+              <div className="bg-gray-900 border border-gray-800 w-full max-w-md max-h-[90dvh] max-w-[95vw] rounded-2xl p-6 shadow-2xl flex flex-col overflow-hidden">
+                <div className="flex justify-between items-start border-b border-gray-800 pb-3 mb-4 shrink-0">
+                  <div>
+                    <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider">Tagesdetails</h3>
+                    <p className="text-[16px] font-black text-white mt-0.5">{selectedDayDetails.dayLabel}</p>
+                  </div>
+                  <button onClick={() => setSelectedDayDetails(null)} className="p-1 bg-gray-950 border border-gray-800 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white transition-colors text-sm font-bold px-2.5 py-1 shrink-0">Schließen</button>
+                </div>
+
+                <div className="space-y-3 flex-1 overflow-y-auto pr-1">
+                  <div>
+                    <h4 className="text-[12px] font-black text-blue-400 uppercase tracking-widest mb-1.5">🎵 Termine & Gigs</h4>
+                    {selectedDayDetails.events.length === 0 ? (
+                      <p className="text-sm text-gray-600 italic">Keine Termine an diesem Tag.</p>
+                    ) : (
+                      selectedDayDetails.events.map(e => (
+                        <div key={e.id} className="bg-gray-950 border border-gray-850 p-2.5 rounded-xl text-sm space-y-1 mb-2">
+                          <div className="flex justify-between font-bold text-gray-200">
+                            <span>{e.title}</span>
+                            <span className="text-blue-400 uppercase text-[10px] border border-blue-500/20 bg-blue-500/5 px-1.5 rounded">{e.event_type}</span>
+                          </div>
+                          <div className="text-gray-400 text-[12px]">🕒 Uhrzeit: {e.event_time.substring(0,5)} Uhr</div>
+                          {e.location && <div className="text-gray-500 text-[12px]">📍 Ort: {e.location}</div>}
+                          <div className="pt-1.5 border-t border-gray-800/60 mt-2">
+                            <button type="button" onClick={() => handleDeleteEvent(e.id)} className="text-[12px] text-red-400 hover:underline">🗑️ Aus diesem Tag löschen</button>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {currentView === 'dateien' && !planningSetlistEvent && !planningSetlistTemplate && (
             <div className="space-y-6">
               <div className="flex justify-between items-center flex-wrap gap-3">
@@ -1295,46 +1417,6 @@ export default function App() {
                     </div>
                   ))
                 )}
-              </div>
-            </div>
-          )}
-
-          {selectedSong && !planningSetlistEvent && !planningSetlistTemplate && (
-            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-              <div className="bg-gray-900 border border-gray-800 w-full max-w-2xl max-h-[90dvh] max-w-[95vw] rounded-2xl p-6 shadow-2xl flex flex-col overflow-hidden">
-                <div className="flex justify-between items-start border-b border-gray-800 pb-3 mb-4 shrink-0">
-                  <div>
-                    <h3 className="text-lg font-black text-white">{selectedSong.title}</h3>
-                    <p className="text-sm text-amber-500 font-semibold">{selectedSong.artist || 'Unbekannter Interpret'}</p>
-                  </div>
-                  <button onClick={() => setSelectedSong(null)} className="p-1 bg-gray-950 border border-gray-800 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white transition-colors text-sm font-bold px-3 py-1.5 shrink-0">Schließen</button>
-                </div>
-
-                <div className="space-y-4 flex-1 overflow-y-auto pr-1">
-                  
-                  <div className="flex gap-2 flex-wrap text-sm font-bold">
-                    {selectedSong.duration && <span className="bg-gray-950 border border-gray-800 text-gray-300 px-3 py-1.5 rounded-lg font-mono">⏱ {selectedSong.duration}</span>}
-                    {selectedSong.bpm && <span className="bg-blue-500/10 border border-blue-500/20 text-blue-400 px-3 py-1.5 rounded-lg font-mono">{selectedSong.bpm} BPM</span>}
-                    {selectedSong.tonart && <span className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-3 py-1.5 rounded-lg">{selectedSong.tonart}</span>}
-                  </div>
-
-                  {selectedSong.tab_link && (
-                    <div className="bg-gray-950 border border-gray-800 p-3 rounded-xl flex items-center justify-between">
-                      <span className="text-sm font-bold text-gray-300">Gitarren Tabs:</span>
-                      <a href={selectedSong.tab_link} target="_blank" rel="noopener noreferrer" className="text-sm bg-amber-500 text-gray-950 font-bold px-3 py-1.5 rounded-lg hover:bg-amber-600 transition-colors">🌐 Tab öffnen</a>
-                    </div>
-                  )}
-
-                  <div className="bg-gray-950 border border-gray-800 p-4 rounded-xl">
-                    <div className="flex justify-between items-center mb-3">
-                      <h4 className="text-[12px] font-black text-gray-400 uppercase tracking-widest">📜 Songtext</h4>
-                      {selectedSong.lyrics && (
-                        <button type="button" onClick={() => downloadLyricsPdf(selectedSong)} className="bg-gray-800 border border-gray-700 text-gray-200 px-3 py-1.5 rounded-lg text-sm font-bold hover:bg-gray-700 hover:text-white transition-colors flex items-center gap-1.5">⬇️ Text als PDF laden</button>
-                      )}
-                    </div>
-                    <p className="text-[16px] text-gray-200 whitespace-pre-wrap font-sans leading-relaxed">{selectedSong.lyrics || 'Kein Songtext hinterlegt.'}</p>
-                  </div>
-                </div>
               </div>
             </div>
           )}
@@ -1783,26 +1865,64 @@ export default function App() {
                 </div>
               </div>
 
+              {/* NEU: Transaktions-Formular (Nur für Admins) */}
               {myProfile.is_admin && (
-                <form onSubmit={handleUpdateFundBalance} className="bg-gray-900/90 border border-amber-500/20 p-6 rounded-2xl space-y-4 shadow-lg max-w-sm mx-auto">
-                  <h3 className="text-sm font-bold uppercase text-amber-500 tracking-wider text-center mb-2">⚙️ Kassenstand anpassen</h3>
-                  <div>
-                    <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Neuer Betrag (in Euro)</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={newBalanceInput}
-                      onChange={(e) => setNewBalanceInput(e.target.value)}
-                      placeholder="z.B. 150.50"
-                      className="w-full bg-gray-950 border border-gray-800 rounded-xl px-4 py-3 text-[16px] text-white focus:outline-none focus:border-amber-500 text-center font-mono text-lg"
-                      required
-                    />
+                <form onSubmit={handleAddTransaction} className="bg-gray-900/90 border border-amber-500/20 p-6 rounded-2xl space-y-4 shadow-lg">
+                  <h3 className="text-sm font-bold uppercase text-amber-500 tracking-wider mb-2">⚙️ Neue Buchung eintragen</h3>
+                  
+                  <div className="flex gap-2 mb-2">
+                    <button type="button" onClick={() => setTransType('+')} className={`flex-1 py-2 rounded-xl text-sm font-bold border transition-colors ${transType === '+' ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400' : 'bg-gray-950 border-gray-800 text-gray-500'}`}>+ Einnahme</button>
+                    <button type="button" onClick={() => setTransType('-')} className={`flex-1 py-2 rounded-xl text-sm font-bold border transition-colors ${transType === '-' ? 'bg-red-500/20 border-red-500/50 text-red-400' : 'bg-gray-950 border-gray-800 text-gray-500'}`}>- Ausgabe</button>
                   </div>
-                  <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[16px] rounded-xl py-3 transition-colors uppercase tracking-wider">
-                    Speichern
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Betrag (€)</label>
+                      <input type="number" step="0.01" value={transAmount} onChange={(e) => setTransAmount(e.target.value)} placeholder="z.B. 150.00" className="w-full bg-gray-950 border border-gray-800 rounded-xl px-4 py-3 text-[16px] text-white focus:outline-none focus:border-amber-500 font-mono" required />
+                    </div>
+                    <div>
+                      <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Grund / Verwendungszweck</label>
+                      <input type="text" value={transReason} onChange={(e) => setTransReason(e.target.value)} placeholder="z.B. Gage Stadtfest" className="w-full bg-gray-950 border border-gray-800 rounded-xl px-4 py-3 text-[16px] text-white focus:outline-none focus:border-amber-500" required />
+                    </div>
+                  </div>
+                  <button type="submit" disabled={isSubmittingTrans} className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-[16px] rounded-xl py-3 transition-colors uppercase tracking-wider">
+                    {isSubmittingTrans ? 'Speichere...' : 'Buchen'}
                   </button>
                 </form>
               )}
+
+              {/* NEU: Das Kassenbuch (Verlauf) */}
+              <div className="bg-gray-900/60 border border-gray-800 p-5 rounded-2xl space-y-4">
+                <h3 className="text-sm font-bold uppercase text-gray-400 tracking-wider">📜 Transaktionsverlauf</h3>
+                
+                {transactions.length === 0 ? (
+                  <p className="text-sm text-gray-500 italic text-center py-4">Bisher keine Buchungen vorhanden.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {transactions.map(t => {
+                      const isIncome = t.transaction_type === '+';
+                      const dateObj = new Date(t.created_at);
+                      const formattedDate = dateObj.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                      const creator = allProfiles.find(p => p.id === t.created_by);
+                      
+                      return (
+                        <div key={t.id} className="bg-gray-950 border border-gray-800 p-3.5 rounded-xl flex justify-between items-center group shadow-sm">
+                          <div className="min-w-0 flex-1 pr-4">
+                            <p className="text-[16px] font-bold text-gray-200 truncate">{t.reason}</p>
+                            <p className="text-[10px] text-gray-500 font-mono mt-0.5">
+                              {formattedDate} • von {creator ? getDisplayName(creator.full_name) : 'Admin'}
+                            </p>
+                          </div>
+                          <div className={`text-[16px] font-black shrink-0 font-mono ${isIncome ? 'text-emerald-400' : 'text-red-400'}`}>
+                            {isIncome ? '+' : '-'}{t.amount.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
             </div>
           )}
 
