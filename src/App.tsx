@@ -1080,13 +1080,13 @@ export default function App() {
   const activeMembersCount = allProfiles.filter(p => p.is_approved || p.is_admin).length;
   
   const filteredSongs = songs.filter(s => 
-    s.title.toLowerCase().includes(songSearchQuery.toLowerCase()) || 
-    (s.artist && s.artist.toLowerCase().includes(songSearchQuery.toLowerCase()))
+    (s.title || '').toLowerCase().includes((songSearchQuery || '').toLowerCase()) || 
+    (s.artist || '').toLowerCase().includes((songSearchQuery || '').toLowerCase())
   );
 
   const setlistPlannerSongs = songs.filter(s => 
-    s.title.toLowerCase().includes(setlistSearchQuery.toLowerCase()) || 
-    (s.artist && s.artist.toLowerCase().includes(setlistSearchQuery.toLowerCase()))
+    (s.title || '').toLowerCase().includes((setlistSearchQuery || '').toLowerCase()) || 
+    (s.artist || '').toLowerCase().includes((setlistSearchQuery || '').toLowerCase())
   );
 
   const myOwnAbsences = absences.filter(a => a.user_id === session?.user?.id);
