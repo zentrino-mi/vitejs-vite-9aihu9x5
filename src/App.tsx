@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from './supabaseClient';
 import { jsPDF } from "jspdf"; 
 
@@ -78,6 +78,7 @@ export default function App() {
   const [eventDescription, setEventDescription] = useState('');
   const [eventType, setEventType] = useState<'Probe' | 'Auftritt' | 'Band-Event'>('Probe');
   
+  const [eventGigStatus, setEventGigStatus] = useState<'Angebot' | 'Steht fest'>('Steht fest');
   const [eventGage, setEventGage] = useState('');
   const [eventPlayTime, setEventPlayTime] = useState('');
   const [eventPlayTimeStart, setEventPlayTimeStart] = useState('');
@@ -104,11 +105,11 @@ export default function App() {
   const [uploadFileObj, setUploadFileObj] = useState<File | null>(null);
 
   const [instruments, setInstruments] = useState<string[]>(['Drums', 'Bass', 'Lead Gitarre', 'Gesang', 'Piano']);
+
   const [songNotes, setSongNotes] = useState<Record<string, string>>({});
   const [isMetronomePlaying, setIsMetronomePlaying] = useState(false);
   const [isLiveMode, setIsLiveMode] = useState(false);
   const [isScrolling, setIsScrolling] = useState(false);
-  const [eventGigStatus, setEventGigStatus] = useState<'Angebot' | 'Steht fest'>('Steht fest');
   const audioContextRef = useRef<AudioContext | null>(null);
   const nextTickRef = useRef<number>(0);
 
@@ -131,51 +132,6 @@ export default function App() {
     }
   }, [selectedSong, isLiveMode]);
 
-  const fetchMyNotes = async () => {
-    if (!session?.user?.id) return;
-    const { data } = await supabase.from('song_notes').select('*').eq('user_id', session.user.id);
-    if (data) {
-      const map = data.reduce((acc: any, curr: any) => ({ ...acc, [curr.song_id]: curr.note_text }), {});
-      setSongNotes(map);
-    }
-  };
-
-  const handleSaveNote = async (songId: string, text: string) => {
-    setSongNotes(prev => ({ ...prev, [songId]: text }));
-    const { data } = await supabase.from('song_notes').select('id').eq('song_id', songId).eq('user_id', session.user.id).single();
-    if (data) {
-       await supabase.from('song_notes').update({ note_text: text, updated_at: new Date() }).eq('id', data.id);
-    } else {
-       await supabase.from('song_notes').insert([{ song_id: songId, user_id: session.user.id, note_text: text }]);
-    }
-  };
-
-  const playClick = () => {
-    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-    if (!audioContextRef.current) audioContextRef.current = new AudioContext();
-    const ctx = audioContextRef.current;
-    if (ctx.state === 'suspended') ctx.resume();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain); gain.connect(ctx.destination);
-    osc.frequency.setValueAtTime(1000, ctx.currentTime);
-    gain.gain.setValueAtTime(1, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.05);
-    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.05);
-  };
-
-  const toggleMetronome = (bpmStr: string) => {
-    const bpm = parseInt(bpmStr);
-    if (!bpm || isNaN(bpm)) return alert('Kein gültiger BPM Wert hinterlegt!');
-    if (isMetronomePlaying) {
-      setIsMetronomePlaying(false); window.clearTimeout(nextTickRef.current);
-    } else {
-      setIsMetronomePlaying(true);
-      const interval = 60000 / bpm;
-      const loop = () => { playClick(); nextTickRef.current = window.setTimeout(loop, interval); };
-      loop();
-    }
-  };
   useEffect(() => {
     if ('Notification' in window) {
       setPushPermission(Notification.permission);
@@ -229,9 +185,55 @@ export default function App() {
       fetchSetlists(), 
       fetchBandFiles(), 
       fetchFundBalance(),
-      fetchTransactions(), 
+      fetchTransactions(),
       fetchMyNotes()
     ]);
+  };
+
+  const fetchMyNotes = async () => {
+    if (!session?.user?.id) return;
+    const { data } = await supabase.from('song_notes').select('*').eq('user_id', session.user.id);
+    if (data) {
+      const map = data.reduce((acc: any, curr: any) => ({ ...acc, [curr.song_id]: curr.note_text }), {});
+      setSongNotes(map);
+    }
+  };
+
+  const handleSaveNote = async (songId: string, text: string) => {
+    setSongNotes(prev => ({ ...prev, [songId]: text }));
+    const { data } = await supabase.from('song_notes').select('id').eq('song_id', songId).eq('user_id', session.user.id).single();
+    if (data) {
+       await supabase.from('song_notes').update({ note_text: text, updated_at: new Date() }).eq('id', data.id);
+    } else {
+       await supabase.from('song_notes').insert([{ song_id: songId, user_id: session.user.id, note_text: text }]);
+    }
+  };
+
+  const playClick = () => {
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    if (!audioContextRef.current) audioContextRef.current = new AudioContext();
+    const ctx = audioContextRef.current;
+    if (ctx.state === 'suspended') ctx.resume();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.frequency.setValueAtTime(1000, ctx.currentTime);
+    gain.gain.setValueAtTime(1, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.05);
+    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.05);
+  };
+
+  const toggleMetronome = (bpmStr: string) => {
+    const bpm = parseInt(bpmStr);
+    if (!bpm || isNaN(bpm)) return alert('Kein gültiger BPM Wert hinterlegt!');
+    if (isMetronomePlaying) {
+      setIsMetronomePlaying(false); window.clearTimeout(nextTickRef.current);
+    } else {
+      setIsMetronomePlaying(true);
+      const interval = 60000 / bpm;
+      const loop = () => { playClick(); nextTickRef.current = window.setTimeout(loop, interval); };
+      loop();
+    }
   };
 
   const fetchProfile = async (userId: string) => {
@@ -780,6 +782,7 @@ export default function App() {
       description: eventDescription,
       event_type: eventType,
       setlist_image: eventType === 'Auftritt' ? finalImageUrl : null, 
+      gig_status: eventType === 'Auftritt' ? eventGigStatus : null,
       gage: eventType === 'Auftritt' && eventGage ? parseFloat(eventGage.replace(',', '.')) : null,
       play_time_hours: eventType === 'Auftritt' && eventPlayTime ? parseFloat(eventPlayTime.replace(',', '.')) : null,
       play_time_start: eventType === 'Auftritt' ? eventPlayTimeStart : null,
@@ -858,6 +861,7 @@ export default function App() {
     setEventMapsLink(ev.maps_link || '');
     setEventDescription(ev.description || ''); 
     setEventType(ev.event_type || 'Probe');
+    setEventGigStatus(ev.gig_status || 'Steht fest');
     setEventSetlistImage(ev.setlist_image || '');
     setSetlistFile(null);
     setEventGage(ev.gage ? ev.gage.toString() : '');
@@ -892,6 +896,7 @@ export default function App() {
     setEventDate(getTodayString()); 
     setEventMapsLink('');
     setEventDescription('');
+    setEventGigStatus('Steht fest');
     setEventSetlistImage('');
     setEventGage('');
     setEventPlayTime('');
@@ -910,7 +915,7 @@ export default function App() {
 
   const resetForm = () => {
     setEventTitle(''); setEventDate(''); setEventTime(''); setEventLocation(''); setEventMapsLink(''); setEventDescription('');
-    setEventType('Probe'); setEventSetlistImage(''); setSetlistFile(null); setEditingEventId(null); setSaveAsDefault(false);
+    setEventType('Probe'); setEventGigStatus('Steht fest'); setEventSetlistImage(''); setSetlistFile(null); setEditingEventId(null); setSaveAsDefault(false);
     setEventGage(''); setEventPlayTime(''); setEventPlayTimeStart(''); setEventPlayTimeEnd(''); setEventSoundcheck('');
     setIsAddingEvent(false); 
   };
@@ -928,7 +933,7 @@ export default function App() {
   const toggleApprove = async (id: string, currentStatus: boolean) => {
     const { error } = await supabase.from('profiles').update({ is_approved: !currentStatus }).eq('id', id);
     if (error) {
-      alert('⚠️ Fehler beim Verifizieren:\n\nDie Datenbank blockiert diese Aktion (' + error.message + ').');
+      alert('Fehler beim Verifizieren:\n\nDie Datenbank blockiert diese Aktion (' + error.message + ').');
     } else {
       fetchAllProfiles();
     }
@@ -937,7 +942,7 @@ export default function App() {
   const togglePermission = async (id: string, columnName: string, currentStatus: boolean) => {
     const { error } = await supabase.from('profiles').update({ [columnName]: !currentStatus }).eq('id', id);
     if (error) {
-      alert('⚠️ Fehler beim Ändern der Rechte:\n\n' + error.message);
+      alert('Fehler beim Ändern der Rechte:\n\n' + error.message);
     } else {
       fetchAllProfiles();
     }
@@ -953,7 +958,7 @@ export default function App() {
     }
 
     const { error } = await supabase.from('profiles').update({ instrument: newInstrument }).eq('id', userId);
-    if (error) alert('⚠️ Fehler beim Ändern des Instruments:\n\n' + error.message);
+    if (error) alert('Fehler beim Ändern des Instruments:\n\n' + error.message);
     else fetchAllProfiles(); 
   };
 
@@ -962,7 +967,7 @@ export default function App() {
     try {
       const permission = await Notification.requestPermission();
       setPushPermission(permission);
-      if (permission === 'granted') alert('🎉 Perfekt! Das Handy hat die Erlaubnis gespeichert. Die App kann dir jetzt echte Mitteilungen senden.');
+      if (permission === 'granted') alert('Perfekt! Das Handy hat die Erlaubnis gespeichert. Die App kann dir jetzt echte Mitteilungen senden.');
       else alert('Die Berechtigung wurde blockiert oder abgelehnt.');
     } catch (error) {
       console.error('Fehler bei der Berechtigungsanfrage:', error);
@@ -1108,6 +1113,31 @@ export default function App() {
   if (session && myProfile) {
     return (
       <div className="min-h-[100dvh] w-full bg-gray-950 text-gray-100 font-sans relative overflow-x-hidden selection:bg-amber-500 selection:text-black m-0 p-0">
+        
+        {/* --- LIVE BÜHNEN-MODUS OVERLAY --- */}
+        {isLiveMode && selectedSong && (
+          <div className="fixed inset-0 bg-black z-[100] text-white overflow-y-auto p-4 sm:p-8 flex flex-col" id="live-mode-container">
+             <div className="sticky top-0 bg-black/90 p-4 border-b border-gray-800 flex justify-between items-center mb-6 z-10 backdrop-blur-sm rounded-xl">
+               <div>
+                 <h2 className="text-2xl sm:text-4xl font-black text-amber-500">{selectedSong.title}</h2>
+                 <p className="text-gray-400 font-bold text-lg mt-1">{selectedSong.artist}</p>
+               </div>
+               <div className="flex gap-2 sm:gap-4 flex-wrap justify-end">
+                 <button onClick={() => setIsScrolling(!isScrolling)} className={`px-4 py-3 rounded-xl font-bold text-lg transition-colors shadow-lg ${isScrolling ? 'bg-blue-500 text-white' : 'bg-gray-800 hover:bg-gray-700'}`}>
+                   {isScrolling ? '⏸ Pause' : '▶️ Auto-Scroll'}
+                 </button>
+                 <button onClick={() => toggleMetronome(selectedSong.bpm)} className={`px-4 py-3 rounded-xl font-bold text-lg transition-all shadow-lg ${isMetronomePlaying ? 'bg-red-500 text-white shadow-[0_0_20px_rgba(239,68,68,0.6)]' : 'bg-gray-800 hover:bg-gray-700'}`}>
+                   ⏱ {selectedSong.bpm || '?'} BPM
+                 </button>
+                 <button onClick={() => setIsLiveMode(false)} className="px-4 py-3 bg-gray-900 border border-gray-700 rounded-xl text-lg font-bold hover:bg-gray-800">X Schließen</button>
+               </div>
+             </div>
+             <div className="text-2xl sm:text-3xl leading-[1.8] font-sans whitespace-pre-wrap px-4 pb-[50vh] text-gray-100">
+               {selectedSong.lyrics || 'Kein Text hinterlegt.'}
+             </div>
+          </div>
+        )}
+
         <div className="max-w-4xl mx-auto p-4 sm:p-6 pb-24">
           
           <div className="flex justify-between items-center border-b border-gray-900 pb-4 mb-6">
@@ -1283,17 +1313,28 @@ export default function App() {
                   
                   <div className="flex gap-2 flex-wrap text-sm font-bold">
                     {selectedSong.duration && <span className="bg-gray-950 border border-gray-800 text-gray-300 px-3 py-1.5 rounded-lg font-mono">⏱ {selectedSong.duration}</span>}
+                    
+                    {/* METRONOM BUTTON */}
                     {selectedSong.bpm && (
-  <button onClick={() => toggleMetronome(selectedSong.bpm)} className={`px-3 py-1.5 rounded-lg font-mono transition-colors ${isMetronomePlaying ? 'bg-red-500 text-white animate-pulse' : 'bg-blue-500/10 border border-blue-500/20 text-blue-400 hover:bg-blue-500/20'}`}>
-    {isMetronomePlaying ? '⏹ Metronom Stop' : `▶️ ${selectedSong.bpm} BPM`}
-  </button>
-)}
+                      <button onClick={() => toggleMetronome(selectedSong.bpm)} className={`px-3 py-1.5 rounded-lg font-mono transition-colors ${isMetronomePlaying ? 'bg-red-500 text-white animate-pulse' : 'bg-blue-500/10 border border-blue-500/20 text-blue-400 hover:bg-blue-500/20'}`}>
+                        {isMetronomePlaying ? '⏹ Metronom Stop' : `▶️ ${selectedSong.bpm} BPM`}
+                      </button>
+                    )}
+
                     {selectedSong.tonart && <span className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-3 py-1.5 rounded-lg">{selectedSong.tonart}</span>}
                   </div>
-                  <div className="bg-gray-950 border border-gray-800 p-4 rounded-xl mb-4 mt-4">
-  <h4 className="text-[12px] font-black text-amber-500 uppercase tracking-widest mb-2">🔒 Meine privaten Notizen</h4>
-  <textarea value={songNotes[selectedSong.id] || ''} onChange={(e) => handleSaveNote(selectedSong.id, e.target.value)} placeholder="Einsätze, Effekte, Erinnerungen... (nur für dich sichtbar)" rows={3} className="w-full bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-amber-500 resize-none" />
-</div>  
+
+                  {/* LIVE BÜHNENMODUS BUTTON */}
+                  <button onClick={() => setIsLiveMode(true)} className="bg-amber-500 text-gray-950 px-4 py-3 rounded-xl font-black text-[16px] hover:bg-amber-600 transition-colors w-full flex items-center justify-center gap-2 shadow-lg mt-4 mb-4">
+                    🎤 Live-Bühnenmodus starten
+                  </button>
+
+                  {/* PRIVATE NOTIZEN */}
+                  <div className="bg-gray-950 border border-gray-800 p-4 rounded-xl mb-4">
+                    <h4 className="text-[12px] font-black text-amber-500 uppercase tracking-widest mb-2">🔒 Meine privaten Notizen</h4>
+                    <textarea value={songNotes[selectedSong.id] || ''} onChange={(e) => handleSaveNote(selectedSong.id, e.target.value)} placeholder="Einsätze, Effekte, Erinnerungen... (nur für dich sichtbar)" rows={3} className="w-full bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-amber-500 resize-none" />
+                  </div>
+
                   {selectedSong.tab_link && (
                     <div className="bg-gray-950 border border-gray-800 p-3 rounded-xl flex items-center justify-between">
                       <span className="text-sm font-bold text-gray-300">Gitarren Tabs:</span>
@@ -1587,10 +1628,17 @@ export default function App() {
                       
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
+                          <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Status</label>
+                          <select value={eventGigStatus} onChange={(e: any) => setEventGigStatus(e.target.value)} className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500">
+                            <option value="Steht fest">🟢 Steht fest / Gebucht</option>
+                            <option value="Angebot">🟡 Nur Angebot / Angefragt</option>
+                          </select>
+                        </div>
+                        <div>
                           <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Gage (€)</label>
                           <input type="number" step="0.01" value={eventGage} onChange={(e) => setEventGage(e.target.value)} placeholder="z.B. 500" className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500 font-mono" />
                         </div>
-                        <div>
+                        <div className="sm:col-span-2">
                           <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Spielzeit (Stunden, z.B. 2.5)</label>
                           <input type="number" step="0.1" value={eventPlayTime} onChange={(e) => setEventPlayTime(e.target.value)} placeholder="z.B. 2.5" className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500 font-mono" />
                         </div>
@@ -1614,7 +1662,6 @@ export default function App() {
                       <div className="space-y-3 pt-2 border-t border-purple-900/30">
                         <label className="block text-[12px] text-amber-400 font-bold uppercase pt-2">📜 Anhang für den Auftritt (Bild oder PDF)</label>
                         <div className="flex gap-2 items-center flex-wrap">
-                          {/* NEU: Erlaubt jetzt Bilder UND PDFs */}
                           <input type="file" accept="image/*,application/pdf" onChange={handleSetlistImageUpload} className="text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-bold file:bg-amber-500 file:text-gray-950 hover:file:bg-amber-600 cursor-pointer" />
                         </div>
                         {eventSetlistImage && (
@@ -1692,7 +1739,15 @@ export default function App() {
                                   <div className="flex items-center gap-2 mb-1 flex-wrap">
                                     <h3 className="text-[16px] font-bold text-gray-100 tracking-tight truncate">{ev.title}</h3>
                                     <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded uppercase tracking-wider ${ev.event_type === 'Auftritt' ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20' : ev.event_type === 'Band-Event' ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20' : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'}`}>{ev.event_type}</span>
-                                    {isPast && <span className="text-[10px] font-bold bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded uppercase">⏳ Vergangen</span>}
+                                    
+                                    {ev.event_type === 'Auftritt' && ev.gig_status === 'Angebot' && (
+                                       <span className="text-[10px] font-bold bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded uppercase ml-2 border border-amber-500/30">🟡 Angebot</span>
+                                    )}
+                                    {ev.event_type === 'Auftritt' && ev.gig_status === 'Steht fest' && (
+                                       <span className="text-[10px] font-bold bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded uppercase ml-2 border border-emerald-500/30">🟢 Fest</span>
+                                    )}
+
+                                    {isPast && <span className="text-[10px] font-bold bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded uppercase ml-2">⏳ Vergangen</span>}
                                   </div>
                                   <div className="space-y-1 text-sm text-gray-400 mt-1">
                                     <div className="flex items-center gap-1.5"><span className="text-amber-500/80">🕒</span><span className="font-medium text-gray-300">{ev.event_time.substring(0, 5)} Uhr</span></div>
