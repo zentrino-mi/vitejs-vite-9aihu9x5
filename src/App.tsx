@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 import { jsPDF } from "jspdf"; 
 
@@ -78,7 +78,6 @@ export default function App() {
   const [eventDescription, setEventDescription] = useState('');
   const [eventType, setEventType] = useState<'Probe' | 'Auftritt' | 'Band-Event'>('Probe');
   
-  const [eventGigStatus, setEventGigStatus] = useState<'Angebot' | 'Steht fest'>('Steht fest');
   const [eventGage, setEventGage] = useState('');
   const [eventPlayTime, setEventPlayTime] = useState('');
   const [eventPlayTimeStart, setEventPlayTimeStart] = useState('');
@@ -105,15 +104,78 @@ export default function App() {
   const [uploadFileObj, setUploadFileObj] = useState<File | null>(null);
 
   const [instruments, setInstruments] = useState<string[]>(['Drums', 'Bass', 'Lead Gitarre', 'Gesang', 'Piano']);
-
-  // --- NEU: SONg NOTES & METRONOM & BÜHNE ---
   const [songNotes, setSongNotes] = useState<Record<string, string>>({});
   const [isMetronomePlaying, setIsMetronomePlaying] = useState(false);
   const [isLiveMode, setIsLiveMode] = useState(false);
   const [isScrolling, setIsScrolling] = useState(false);
+  const [eventGigStatus, setEventGigStatus] = useState<'Angebot' | 'Steht fest'>('Steht fest');
   const audioContextRef = useRef<AudioContext | null>(null);
   const nextTickRef = useRef<number>(0);
 
+  useEffect(() => {
+    let interval: any;
+    if (isScrolling && isLiveMode) {
+      interval = setInterval(() => {
+        const container = document.getElementById('live-mode-container');
+        if (container) container.scrollBy(0, 1);
+      }, 40); 
+    }
+    return () => clearInterval(interval);
+  }, [isScrolling, isLiveMode]);
+
+  useEffect(() => {
+    if (!selectedSong && !isLiveMode) {
+      setIsMetronomePlaying(false);
+      window.clearTimeout(nextTickRef.current);
+      setIsScrolling(false);
+    }
+  }, [selectedSong, isLiveMode]);
+
+  const fetchMyNotes = async () => {
+    if (!session?.user?.id) return;
+    const { data } = await supabase.from('song_notes').select('*').eq('user_id', session.user.id);
+    if (data) {
+      const map = data.reduce((acc: any, curr: any) => ({ ...acc, [curr.song_id]: curr.note_text }), {});
+      setSongNotes(map);
+    }
+  };
+
+  const handleSaveNote = async (songId: string, text: string) => {
+    setSongNotes(prev => ({ ...prev, [songId]: text }));
+    const { data } = await supabase.from('song_notes').select('id').eq('song_id', songId).eq('user_id', session.user.id).single();
+    if (data) {
+       await supabase.from('song_notes').update({ note_text: text, updated_at: new Date() }).eq('id', data.id);
+    } else {
+       await supabase.from('song_notes').insert([{ song_id: songId, user_id: session.user.id, note_text: text }]);
+    }
+  };
+
+  const playClick = () => {
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    if (!audioContextRef.current) audioContextRef.current = new AudioContext();
+    const ctx = audioContextRef.current;
+    if (ctx.state === 'suspended') ctx.resume();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.frequency.setValueAtTime(1000, ctx.currentTime);
+    gain.gain.setValueAtTime(1, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.05);
+    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.05);
+  };
+
+  const toggleMetronome = (bpmStr: string) => {
+    const bpm = parseInt(bpmStr);
+    if (!bpm || isNaN(bpm)) return alert('Kein gültiger BPM Wert hinterlegt!');
+    if (isMetronomePlaying) {
+      setIsMetronomePlaying(false); window.clearTimeout(nextTickRef.current);
+    } else {
+      setIsMetronomePlaying(true);
+      const interval = 60000 / bpm;
+      const loop = () => { playClick(); nextTickRef.current = window.setTimeout(loop, interval); };
+      loop();
+    }
+  };
   useEffect(() => {
     if ('Notification' in window) {
       setPushPermission(Notification.permission);
@@ -143,7 +205,6 @@ export default function App() {
         setSavedSetlists([]);
         setBandFiles([]);
         setTransactions([]);
-        setSongNotes({});
         setCurrentView('termine');
         setIsLoading(false);
       }
@@ -151,27 +212,6 @@ export default function App() {
 
     return () => subscription.unsubscribe();
   }, []);
-
-  // Bühnen-Modus Auto-Scroll Loop
-  useEffect(() => {
-    let interval: any;
-    if (isScrolling && isLiveMode) {
-      interval = setInterval(() => {
-        const container = document.getElementById('live-mode-container');
-        if (container) container.scrollBy(0, 1);
-      }, 40); 
-    }
-    return () => clearInterval(interval);
-  }, [isScrolling, isLiveMode]);
-
-  // Stoppt das Metronom, wenn der Song geschlossen wird
-  useEffect(() => {
-    if (!selectedSong && !isLiveMode) {
-      setIsMetronomePlaying(false);
-      window.clearTimeout(nextTickRef.current);
-      setIsScrolling(false);
-    }
-  }, [selectedSong, isLiveMode]);
 
   const initAppData = async (userId: string) => {
     setIsLoading(true);
@@ -189,7 +229,7 @@ export default function App() {
       fetchSetlists(), 
       fetchBandFiles(), 
       fetchFundBalance(),
-      fetchTransactions(),
+      fetchTransactions(), 
       fetchMyNotes()
     ]);
   };
@@ -258,65 +298,6 @@ export default function App() {
   const fetchTransactions = async () => {
     const { data } = await supabase.from('band_fund_transactions').select('*').order('created_at', { ascending: false });
     if (data) setTransactions(data);
-  };
-
-  const fetchMyNotes = async () => {
-    if (!session?.user?.id) return;
-    const { data } = await supabase.from('song_notes').select('*').eq('user_id', session.user.id);
-    if (data) {
-      const map = data.reduce((acc: any, curr: any) => ({ ...acc, [curr.song_id]: curr.note_text }), {});
-      setSongNotes(map);
-    }
-  };
-
-  const handleSaveNote = async (songId: string, text: string) => {
-    setSongNotes(prev => ({ ...prev, [songId]: text }));
-    const { data } = await supabase.from('song_notes').select('id').eq('song_id', songId).eq('user_id', session.user.id).single();
-    if (data) {
-       await supabase.from('song_notes').update({ note_text: text, updated_at: new Date() }).eq('id', data.id);
-    } else {
-       await supabase.from('song_notes').insert([{ song_id: songId, user_id: session.user.id, note_text: text }]);
-    }
-  };
-
-  const playClick = () => {
-    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-    if (!audioContextRef.current) audioContextRef.current = new AudioContext();
-    const ctx = audioContextRef.current;
-    
-    // Kleiner Trick um das AudioContext aufzuwecken (für manche Browser nötig)
-    if (ctx.state === 'suspended') ctx.resume();
-
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    
-    // Ein heller "Click" Sound
-    osc.frequency.setValueAtTime(1000, ctx.currentTime);
-    gain.gain.setValueAtTime(1, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.05);
-    
-    osc.start(ctx.currentTime);
-    osc.stop(ctx.currentTime + 0.05);
-  };
-
-  const toggleMetronome = (bpmStr: string) => {
-    const bpm = parseInt(bpmStr);
-    if (!bpm || isNaN(bpm)) return alert('Kein gültiger BPM Wert hinterlegt!');
-    
-    if (isMetronomePlaying) {
-      setIsMetronomePlaying(false);
-      window.clearTimeout(nextTickRef.current);
-    } else {
-      setIsMetronomePlaying(true);
-      const interval = 60000 / bpm;
-      const loop = () => {
-        playClick();
-        nextTickRef.current = window.setTimeout(loop, interval);
-      };
-      loop(); // Start
-    }
   };
 
   const handleAddTransaction = async (e: React.FormEvent) => {
@@ -799,7 +780,6 @@ export default function App() {
       description: eventDescription,
       event_type: eventType,
       setlist_image: eventType === 'Auftritt' ? finalImageUrl : null, 
-      gig_status: eventType === 'Auftritt' ? eventGigStatus : null,
       gage: eventType === 'Auftritt' && eventGage ? parseFloat(eventGage.replace(',', '.')) : null,
       play_time_hours: eventType === 'Auftritt' && eventPlayTime ? parseFloat(eventPlayTime.replace(',', '.')) : null,
       play_time_start: eventType === 'Auftritt' ? eventPlayTimeStart : null,
@@ -878,7 +858,6 @@ export default function App() {
     setEventMapsLink(ev.maps_link || '');
     setEventDescription(ev.description || ''); 
     setEventType(ev.event_type || 'Probe');
-    setEventGigStatus(ev.gig_status || 'Steht fest');
     setEventSetlistImage(ev.setlist_image || '');
     setSetlistFile(null);
     setEventGage(ev.gage ? ev.gage.toString() : '');
@@ -913,7 +892,6 @@ export default function App() {
     setEventDate(getTodayString()); 
     setEventMapsLink('');
     setEventDescription('');
-    setEventGigStatus('Steht fest');
     setEventSetlistImage('');
     setEventGage('');
     setEventPlayTime('');
@@ -932,7 +910,7 @@ export default function App() {
 
   const resetForm = () => {
     setEventTitle(''); setEventDate(''); setEventTime(''); setEventLocation(''); setEventMapsLink(''); setEventDescription('');
-    setEventType('Probe'); setEventGigStatus('Steht fest'); setEventSetlistImage(''); setSetlistFile(null); setEditingEventId(null); setSaveAsDefault(false);
+    setEventType('Probe'); setEventSetlistImage(''); setSetlistFile(null); setEditingEventId(null); setSaveAsDefault(false);
     setEventGage(''); setEventPlayTime(''); setEventPlayTimeStart(''); setEventPlayTimeEnd(''); setEventSoundcheck('');
     setIsAddingEvent(false); 
   };
@@ -1130,31 +1108,6 @@ export default function App() {
   if (session && myProfile) {
     return (
       <div className="min-h-[100dvh] w-full bg-gray-950 text-gray-100 font-sans relative overflow-x-hidden selection:bg-amber-500 selection:text-black m-0 p-0">
-        
-        {/* --- LIVE BÜHNEN-MODUS OVERLAY --- */}
-        {isLiveMode && selectedSong && (
-          <div className="fixed inset-0 bg-black z-[100] text-white overflow-y-auto p-4 sm:p-8 flex flex-col" id="live-mode-container">
-             <div className="sticky top-0 bg-black/90 p-4 border-b border-gray-800 flex justify-between items-center mb-6 z-10 backdrop-blur-sm rounded-xl">
-               <div>
-                 <h2 className="text-2xl sm:text-4xl font-black text-amber-500">{selectedSong.title}</h2>
-                 <p className="text-gray-400 font-bold text-lg mt-1">{selectedSong.artist}</p>
-               </div>
-               <div className="flex gap-2 sm:gap-4 flex-wrap justify-end">
-                 <button onClick={() => setIsScrolling(!isScrolling)} className={`px-4 py-3 rounded-xl font-bold text-lg transition-colors shadow-lg ${isScrolling ? 'bg-blue-500 text-white' : 'bg-gray-800 hover:bg-gray-700'}`}>
-                   {isScrolling ? '⏸ Pause' : '▶️ Auto-Scroll'}
-                 </button>
-                 <button onClick={() => toggleMetronome(selectedSong.bpm)} className={`px-4 py-3 rounded-xl font-bold text-lg transition-all shadow-lg ${isMetronomePlaying ? 'bg-red-500 text-white shadow-[0_0_20px_rgba(239,68,68,0.6)]' : 'bg-gray-800 hover:bg-gray-700'}`}>
-                   ⏱ {selectedSong.bpm || '?'} BPM
-                 </button>
-                 <button onClick={() => setIsLiveMode(false)} className="px-4 py-3 bg-gray-900 border border-gray-700 rounded-xl text-lg font-bold hover:bg-gray-800">X Schließen</button>
-               </div>
-             </div>
-             <div className="text-2xl sm:text-3xl leading-[1.8] font-sans whitespace-pre-wrap px-4 pb-[50vh] text-gray-100">
-               {selectedSong.lyrics || 'Kein Text hinterlegt.'}
-             </div>
-          </div>
-        )}
-
         <div className="max-w-4xl mx-auto p-4 sm:p-6 pb-24">
           
           <div className="flex justify-between items-center border-b border-gray-900 pb-4 mb-6">
@@ -1271,24 +1224,20 @@ export default function App() {
 
                         <div className="space-y-2">
                           {set.songs.length === 0 && <p className="text-sm text-gray-600 italic pb-2">Set ist leer. Wähle links einen Song aus (+).</p>}
-                          {set.songs.map((song: any, index: number) => {
-                            // Holt sich die Song-Details aus der großen Liste, um alle Daten wie BPM zu haben
-                            const fullSongDetails = songs.find(s => s.id === song.id) || song;
-                            return (
-                              <div key={`${song.id}-${index}`} className="flex items-center gap-2 bg-gray-950 border border-gray-800 p-2 rounded-lg group cursor-pointer hover:border-gray-600 transition-colors" onClick={(e) => { e.stopPropagation(); setSelectedSong(fullSongDetails); }}>
-                                <span className="text-gray-500 font-black text-sm w-5 text-right shrink-0">{index + 1}.</span>
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-sm font-bold text-gray-200 truncate group-hover:text-amber-400 transition-colors">{song.title}</p>
-                                </div>
-                                <span className="text-[12px] font-mono text-gray-400 mx-2 shrink-0">{song.duration || '--:--'}</span>
-                                <div className="flex flex-col gap-0.5 shrink-0">
-                                  <button disabled={index === 0} onClick={(e) => { e.stopPropagation(); moveSongInSet(set.id, index, 'up'); }} className="text-gray-400 hover:text-white disabled:opacity-30 p-0.5 leading-none transition-colors">▲</button>
-                                  <button disabled={index === set.songs.length - 1} onClick={(e) => { e.stopPropagation(); moveSongInSet(set.id, index, 'down'); }} className="text-gray-400 hover:text-white disabled:opacity-30 p-0.5 leading-none transition-colors">▼</button>
-                                </div>
-                                <button onClick={(e) => { e.stopPropagation(); removeSongFromSet(set.id, index); }} className="text-red-500 font-black ml-2 px-2 hover:scale-110 transition-transform shrink-0">✕</button>
+                          {set.songs.map((song: any, index: number) => (
+                            <div key={`${song.id}-${index}`} className="flex items-center gap-2 bg-gray-950 border border-gray-800 p-2 rounded-lg group">
+                              <span className="text-gray-500 font-black text-sm w-5 text-right shrink-0">{index + 1}.</span>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-bold text-gray-200 truncate">{song.title}</p>
                               </div>
-                            );
-                          })}
+                              <span className="text-[12px] font-mono text-gray-400 mx-2 shrink-0">{song.duration || '--:--'}</span>
+                              <div className="flex flex-col gap-0.5 shrink-0">
+                                <button disabled={index === 0} onClick={(e) => { e.stopPropagation(); moveSongInSet(set.id, index, 'up'); }} className="text-gray-400 hover:text-white disabled:opacity-30 p-0.5 leading-none transition-colors">▲</button>
+                                <button disabled={index === set.songs.length - 1} onClick={(e) => { e.stopPropagation(); moveSongInSet(set.id, index, 'down'); }} className="text-gray-400 hover:text-white disabled:opacity-30 p-0.5 leading-none transition-colors">▼</button>
+                              </div>
+                              <button onClick={(e) => { e.stopPropagation(); removeSongFromSet(set.id, index); }} className="text-red-500 font-black ml-2 px-2 hover:scale-110 transition-transform shrink-0">✕</button>
+                            </div>
+                          ))}
                         </div>
                       </div>
                     );
@@ -1297,6 +1246,285 @@ export default function App() {
                     <p className="font-black text-gray-300">Gesamte Spielzeit: <span className="text-amber-500 text-xl">{formatDuration(setlistData.reduce((acc, set) => acc + set.songs.reduce((a:number, s:any) => a + parseDuration(s.duration), 0), 0))} Min</span></p>
                   </div>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {selectedSetlistImage && (
+            <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center p-4">
+              <div className="bg-gray-900 border border-gray-800 w-full max-w-3xl max-h-[90dvh] max-w-[95vw] rounded-2xl p-4 shadow-2xl flex flex-col overflow-hidden">
+                <div className="flex justify-between items-center border-b border-gray-800 pb-3 mb-4">
+                  <h3 className="text-sm font-bold text-white uppercase tracking-wider">📜 Anhang Vorschau</h3>
+                  <button onClick={() => setSelectedSetlistImage(null)} className="p-1 bg-gray-950 border border-gray-800 rounded-lg text-sm font-bold px-3 py-1.5 text-gray-400 hover:text-white">Schließen</button>
+                </div>
+                <div className="overflow-y-auto flex-1 flex items-center justify-center">
+                  {selectedSetlistImage.toLowerCase().endsWith('.pdf') ? (
+                    <iframe src={selectedSetlistImage} width="100%" height="500px" className="border border-gray-700 rounded-xl bg-white w-full" title="PDF Vorschau" />
+                  ) : (
+                    <img src={selectedSetlistImage} alt="Anhang" className="max-w-full h-auto object-contain rounded-xl border border-gray-800 shadow-inner" />
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {selectedSong && !planningSetlistEvent && !planningSetlistTemplate && (
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+              <div className="bg-gray-900 border border-gray-800 w-full max-w-2xl max-h-[90dvh] max-w-[95vw] rounded-2xl p-6 shadow-2xl flex flex-col overflow-hidden">
+                <div className="flex justify-between items-start border-b border-gray-800 pb-3 mb-4 shrink-0">
+                  <div>
+                    <h3 className="text-lg font-black text-white">{selectedSong.title}</h3>
+                    <p className="text-sm text-amber-500 font-semibold">{selectedSong.artist || 'Unbekannter Interpret'}</p>
+                  </div>
+                  <button onClick={() => setSelectedSong(null)} className="p-1 bg-gray-950 border border-gray-800 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white transition-colors text-sm font-bold px-3 py-1.5 shrink-0">Schließen</button>
+                </div>
+
+                <div className="space-y-4 flex-1 overflow-y-auto pr-1">
+                  
+                  <div className="flex gap-2 flex-wrap text-sm font-bold">
+                    {selectedSong.duration && <span className="bg-gray-950 border border-gray-800 text-gray-300 px-3 py-1.5 rounded-lg font-mono">⏱ {selectedSong.duration}</span>}
+                    {selectedSong.bpm && (
+  <button onClick={() => toggleMetronome(selectedSong.bpm)} className={`px-3 py-1.5 rounded-lg font-mono transition-colors ${isMetronomePlaying ? 'bg-red-500 text-white animate-pulse' : 'bg-blue-500/10 border border-blue-500/20 text-blue-400 hover:bg-blue-500/20'}`}>
+    {isMetronomePlaying ? '⏹ Metronom Stop' : `▶️ ${selectedSong.bpm} BPM`}
+  </button>
+)}
+                    {selectedSong.tonart && <span className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-3 py-1.5 rounded-lg">{selectedSong.tonart}</span>}
+                  </div>
+                  <div className="bg-gray-950 border border-gray-800 p-4 rounded-xl mb-4 mt-4">
+  <h4 className="text-[12px] font-black text-amber-500 uppercase tracking-widest mb-2">🔒 Meine privaten Notizen</h4>
+  <textarea value={songNotes[selectedSong.id] || ''} onChange={(e) => handleSaveNote(selectedSong.id, e.target.value)} placeholder="Einsätze, Effekte, Erinnerungen... (nur für dich sichtbar)" rows={3} className="w-full bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-amber-500 resize-none" />
+</div>  
+                  {selectedSong.tab_link && (
+                    <div className="bg-gray-950 border border-gray-800 p-3 rounded-xl flex items-center justify-between">
+                      <span className="text-sm font-bold text-gray-300">Gitarren Tabs:</span>
+                      <a href={selectedSong.tab_link} target="_blank" rel="noopener noreferrer" className="text-sm bg-amber-500 text-gray-950 font-bold px-3 py-1.5 rounded-lg hover:bg-amber-600 transition-colors">🌐 Tab öffnen</a>
+                    </div>
+                  )}
+
+                  <div className="bg-gray-950 border border-gray-800 p-4 rounded-xl">
+                    <div className="flex justify-between items-center mb-3">
+                      <h4 className="text-[12px] font-black text-gray-400 uppercase tracking-widest">📜 Songtext</h4>
+                      {selectedSong.lyrics && (
+                        <button type="button" onClick={() => downloadLyricsPdf(selectedSong)} className="bg-gray-800 border border-gray-700 text-gray-200 px-3 py-1.5 rounded-lg text-sm font-bold hover:bg-gray-700 hover:text-white transition-colors flex items-center gap-1.5">⬇️ Text als PDF laden</button>
+                      )}
+                    </div>
+                    <p className="text-[16px] text-gray-200 whitespace-pre-wrap font-sans leading-relaxed">{selectedSong.lyrics || 'Kein Songtext hinterlegt.'}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {selectedDayDetails && (
+            <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+              <div className="bg-gray-900 border border-gray-800 w-full max-w-md max-h-[90dvh] max-w-[95vw] rounded-2xl p-6 shadow-2xl flex flex-col overflow-hidden">
+                <div className="flex justify-between items-start border-b border-gray-800 pb-3 mb-4 shrink-0">
+                  <div>
+                    <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider">Tagesdetails</h3>
+                    <p className="text-[16px] font-black text-white mt-0.5">{selectedDayDetails.dayLabel}</p>
+                  </div>
+                  <button onClick={() => setSelectedDayDetails(null)} className="p-1 bg-gray-950 border border-gray-800 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white transition-colors text-sm font-bold px-2.5 py-1 shrink-0">Schließen</button>
+                </div>
+
+                <div className="space-y-3 flex-1 overflow-y-auto pr-1">
+                  <div>
+                    <h4 className="text-[12px] font-black text-blue-400 uppercase tracking-widest mb-1.5">🎵 Termine & Gigs</h4>
+                    {selectedDayDetails.events.length === 0 ? (
+                      <p className="text-sm text-gray-600 italic">Keine Termine an diesem Tag.</p>
+                    ) : (
+                      selectedDayDetails.events.map(e => (
+                        <div key={e.id} className="bg-gray-950 border border-gray-850 p-2.5 rounded-xl text-sm space-y-1 mb-2">
+                          <div className="flex justify-between font-bold text-gray-200">
+                            <span>{e.title}</span>
+                            <span className="text-blue-400 uppercase text-[10px] border border-blue-500/20 bg-blue-500/5 px-1.5 rounded">{e.event_type}</span>
+                          </div>
+                          <div className="text-gray-400 text-[12px]">🕒 Uhrzeit: {e.event_time.substring(0,5)} Uhr</div>
+                          {e.location && <div className="text-gray-500 text-[12px]">📍 Ort: {e.location}</div>}
+                          <div className="pt-1.5 border-t border-gray-800/60 mt-2">
+                            <button type="button" onClick={() => handleDeleteEvent(e.id)} className="text-[12px] text-red-400 hover:underline">🗑️ Aus diesem Tag löschen</button>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {currentView === 'dateien' && !planningSetlistEvent && !planningSetlistTemplate && (
+            <div className="space-y-6">
+              <div className="flex justify-between items-center flex-wrap gap-3">
+                <h2 className="text-lg font-bold text-gray-300">📁 Dateien & Dokumente</h2>
+                <button onClick={() => setIsUploadingFile(!isUploadingFile)} className="bg-amber-500 hover:bg-amber-600 text-gray-950 text-sm font-bold px-3 py-2 rounded-xl transition-transform active:scale-95">
+                  {isUploadingFile ? 'Schließen' : '+ Datei hochladen'}
+                </button>
+              </div>
+
+              {isUploadingFile && (
+                <form onSubmit={handleFileUploadSubmit} className="bg-gray-900/90 border border-amber-500/20 p-5 rounded-2xl space-y-4 shadow-lg">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Bezeichnung / Titel</label>
+                      <input type="text" value={uploadFileTitle} onChange={(e) => setUploadFileTitle(e.target.value)} placeholder="z.B. Band Logos (ZIP)" className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500" required />
+                    </div>
+                    <div>
+                      <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Datei auswählen</label>
+                      <input type="file" onChange={(e) => setUploadFileObj(e.target.files?.[0] || null)} className="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-bold file:bg-gray-800 file:text-gray-300 hover:file:bg-gray-700 cursor-pointer" required />
+                    </div>
+                  </div>
+                  <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[16px] rounded-xl py-2.5 transition-colors">Hochladen & Speichern</button>
+                </form>
+              )}
+
+              <div className="relative">
+                <input type="text" value={fileSearchQuery} onChange={(e) => setFileSearchQuery(e.target.value)} placeholder="🔍 Nach Dateititel suchen..." className="w-full bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 text-[16px] text-white focus:outline-none focus:border-amber-500 shadow-sm" />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {bandFiles.filter(f => f.title.toLowerCase().includes(fileSearchQuery.toLowerCase())).length === 0 ? (
+                  <p className="text-sm text-gray-500 italic col-span-2">Keine Dateien gefunden.</p>
+                ) : (
+                  bandFiles.filter(f => f.title.toLowerCase().includes(fileSearchQuery.toLowerCase())).map(file => (
+                    <div key={file.id} className="bg-gray-900/40 border border-gray-800 p-4 rounded-xl flex flex-col justify-between shadow-sm">
+                      <div className="mb-3">
+                        <h3 className="text-[16px] font-bold text-gray-100">{file.title}</h3>
+                        <p className="text-[10px] text-gray-500 font-mono mt-1 truncate">{file.file_name}</p>
+                      </div>
+                      <div className="flex justify-between items-center mt-2 pt-3 border-t border-gray-800/60">
+                        <a href={file.file_url} target="_blank" rel="noopener noreferrer" download className="text-[12px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-3 py-1.5 rounded-lg hover:bg-blue-500/20 transition-colors font-bold">⬇️ Herunterladen</a>
+                        
+                        {(myProfile.can_manage_events || myProfile.is_admin || file.created_by === session.user.id) && (
+                          <button onClick={() => handleDeleteFile(file.id, file.file_url)} className="text-[12px] bg-red-500/10 text-red-400 px-2.5 py-1.5 rounded hover:bg-red-500/20 transition-colors">🗑️ Löschen</button>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+
+          {currentView === 'setlisten' && !planningSetlistEvent && !planningSetlistTemplate && (
+            <div className="space-y-6">
+              <div className="flex justify-between items-center flex-wrap gap-3">
+                <h2 className="text-lg font-bold text-gray-300">📋 Setlist-Vorlagen</h2>
+                <button onClick={handleCreateTemplate} className="bg-amber-500 hover:bg-amber-600 text-gray-950 text-sm font-bold px-3 py-2 rounded-xl transition-transform active:scale-95">
+                  + Neue Vorlage
+                </button>
+              </div>
+
+              {savedSetlists.length === 0 ? (
+                <div className="bg-gray-900/60 border border-gray-800 p-8 rounded-2xl text-center">
+                  <p className="text-gray-400 mb-2">Ihr habt noch keine Vorlagen erstellt.</p>
+                  <p className="text-sm text-gray-500">Erstelle eine Standard-Setlist, um sie später bei Auftritten mit einem Klick zu laden!</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {savedSetlists.map(template => {
+                    const totalSecs = calculateTemplateDuration(template.setlist_data);
+                    
+                    return (
+                      <div key={template.id} className="bg-gray-900/40 border border-gray-800 p-4 rounded-xl flex flex-col justify-between shadow-sm">
+                        <div className="mb-4 border-b border-gray-800 pb-3">
+                          <h3 className="text-[16px] font-bold text-gray-100 mb-1">{template.title}</h3>
+                          <div className="flex gap-3 text-[12px] text-gray-400">
+                            <span className="bg-gray-800 px-2 py-0.5 rounded">Sets: {template.setlist_data?.length || 0}</span>
+                            <span className="bg-gray-800 px-2 py-0.5 rounded text-amber-500 font-mono">Dauer: {formatDuration(totalSecs)} Min</span>
+                          </div>
+                        </div>
+                        <div className="flex justify-end gap-2">
+                          <button onClick={() => openSetlistPlannerForTemplate(template)} className="text-[12px] bg-amber-500/10 text-amber-500 border border-amber-500/20 px-3 py-1.5 rounded-lg hover:bg-amber-500/20 transition-colors font-bold">✏️ Bearbeiten</button>
+                          <button onClick={() => handleDeleteTemplate(template.id)} className="text-[12px] bg-red-500/10 text-red-400 border border-red-500/20 px-3 py-1.5 rounded-lg hover:bg-red-500/20 transition-colors">🗑️ Löschen</button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {currentView === 'songs' && !planningSetlistEvent && !planningSetlistTemplate && (
+            <div className="space-y-6">
+              <div className="flex justify-between items-center flex-wrap gap-3">
+                <h2 className="text-lg font-bold text-gray-300">🎵 Song-Repertoire ({songs.length})</h2>
+                <button onClick={() => { if(isAddingSong) resetSongForm(); else setIsAddingSong(true); }} className="bg-amber-500 hover:bg-amber-600 text-gray-950 text-sm font-bold px-3 py-2 rounded-xl transition-transform active:scale-95">
+                  {isAddingSong ? 'Schließen' : '+ Song hinzufügen'}
+                </button>
+              </div>
+
+              {isAddingSong && (
+                <form onSubmit={handleAddSong} className="bg-gray-900/90 border border-amber-500/20 p-5 rounded-2xl space-y-4 shadow-lg">
+                  <h3 className="font-bold text-amber-500 text-sm uppercase mb-2">{editingSongId ? '✏️ Song bearbeiten' : '➕ Neuen Song anlegen'}</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                    <div className="sm:col-span-2">
+                      <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Songtitel</label>
+                      <input type="text" value={songTitle} onChange={(e) => setSongTitle(e.target.value)} placeholder="z.B. Knockin' on Heaven's Door" className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500" required />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Interpret</label>
+                      <input type="text" value={songArtist} onChange={(e) => setSongArtist(e.target.value)} placeholder="z.B. Bob Dylan" className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500" />
+                    </div>
+                    <div>
+                      <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Dauer (MM:SS)</label>
+                      <input type="text" value={songDuration} onChange={(e) => setSongDuration(e.target.value)} placeholder="03:25" pattern="[0-9]{1,2}:[0-5][0-9]" title="Bitte im Format MM:SS eingeben (z.B. 03:25)" className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500 font-mono" />
+                    </div>
+                    <div>
+                      <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">BPM</label>
+                      <input type="text" value={songBpm} onChange={(e) => setSongBpm(e.target.value)} placeholder="z.B. 120" className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500 font-mono" />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Tonart</label>
+                      <input type="text" value={songKey} onChange={(e) => setSongKey(e.target.value)} placeholder="z.B. C-Dur / Am" className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500" />
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 gap-3">
+                    <div>
+                      <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Link für Gitarren Tabs</label>
+                      <input type="url" value={songTabLink} onChange={(e) => setSongTabLink(e.target.value)} placeholder="https://www.ultimate-guitar.com/..." className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500" />
+                    </div>
+                    <div>
+                      <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Songtext (Lyrics)</label>
+                      <textarea value={songLyrics} onChange={(e) => setSongLyrics(e.target.value)} placeholder="Strophe 1..." rows={6} className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500 resize-none" />
+                    </div>
+                  </div>
+                  <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[16px] rounded-xl py-2.5 transition-colors">{editingSongId ? 'Änderungen speichern' : 'Song speichern'}</button>
+                </form>
+              )}
+
+              <div className="relative">
+                <input type="text" value={songSearchQuery} onChange={(e) => setSongSearchQuery(e.target.value)} placeholder="🔍 Nach Songtitel oder Interpret suchen..." className="w-full bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 text-[16px] text-white focus:outline-none focus:border-amber-500 shadow-sm" />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {filteredSongs.length === 0 ? (
+                  <p className="text-sm text-gray-500 italic col-span-2">Keine Songs gefunden.</p>
+                ) : (
+                  filteredSongs.map(song => (
+                    <div key={song.id} className="bg-gray-900/40 border border-gray-800 hover:border-gray-700 p-4 rounded-xl transition-all shadow-sm flex flex-col justify-between group">
+                      <div onClick={() => setSelectedSong(song)} className="cursor-pointer">
+                        <div className="flex justify-between items-start">
+                          <h3 className="text-[16px] font-bold text-gray-100 group-hover:text-amber-400 transition-colors">{song.title}</h3>
+                          <div className="flex gap-1 text-[10px] font-bold flex-wrap justify-end">
+                            {song.duration && <span className="bg-gray-800 text-gray-300 px-1.5 py-0.5 rounded font-mono">⏱ {song.duration}</span>}
+                            {song.bpm && <span className="bg-blue-500/10 text-blue-400 border border-blue-500/20 px-1.5 py-0.5 rounded font-mono">{song.bpm} BPM</span>}
+                            {song.tonart && <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-1.5 py-0.5 rounded">{song.tonart}</span>}
+                          </div>
+                        </div>
+                        <p className="text-sm text-gray-400 mt-0.5">{song.artist || 'Unbekannter Interpret'}</p>
+                      </div>
+                      
+                      {(myProfile.can_manage_events || myProfile.is_admin) && (
+                         <div className="mt-3 pt-2 border-t border-gray-800/60 flex justify-end gap-2">
+                           <button onClick={() => startEditSong(song)} className="text-[12px] bg-gray-800 text-gray-300 px-2.5 py-1 rounded hover:bg-gray-700 transition-colors">✏️ Bearbeiten</button>
+                           <button onClick={() => handleDeleteSong(song.id)} className="text-[12px] bg-red-500/10 text-red-400 px-2.5 py-1 rounded hover:bg-red-500/20 transition-colors">🗑️ Löschen</button>
+                         </div>
+                      )}
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           )}
@@ -1355,25 +1583,14 @@ export default function App() {
 
                   {eventType === 'Auftritt' && (
                     <div className="bg-purple-950/20 border border-purple-900/30 p-4 rounded-xl space-y-4">
-                      <h4 className="text-[12px] font-black text-purple-400 uppercase tracking-widest flex justify-between items-center">
-                        <span>🎤 Auftritts-Details</span>
-                      </h4>
+                      <h4 className="text-[12px] font-black text-purple-400 uppercase tracking-widest">🎤 Auftritts-Details</h4>
                       
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        {/* NEU: AUFTRITTS-STATUS DROPDOWN */}
-                        <div>
-                          <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Status</label>
-                          <select value={eventGigStatus} onChange={(e: any) => setEventGigStatus(e.target.value)} className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500">
-                            <option value="Steht fest">🟢 Steht fest / Gebucht</option>
-                            <option value="Angebot">🟡 Nur Angebot / Angefragt</option>
-                          </select>
-                        </div>
-
                         <div>
                           <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Gage (€)</label>
                           <input type="number" step="0.01" value={eventGage} onChange={(e) => setEventGage(e.target.value)} placeholder="z.B. 500" className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500 font-mono" />
                         </div>
-                        <div className="sm:col-span-2">
+                        <div>
                           <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Spielzeit (Stunden, z.B. 2.5)</label>
                           <input type="number" step="0.1" value={eventPlayTime} onChange={(e) => setEventPlayTime(e.target.value)} placeholder="z.B. 2.5" className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500 font-mono" />
                         </div>
@@ -1397,6 +1614,7 @@ export default function App() {
                       <div className="space-y-3 pt-2 border-t border-purple-900/30">
                         <label className="block text-[12px] text-amber-400 font-bold uppercase pt-2">📜 Anhang für den Auftritt (Bild oder PDF)</label>
                         <div className="flex gap-2 items-center flex-wrap">
+                          {/* NEU: Erlaubt jetzt Bilder UND PDFs */}
                           <input type="file" accept="image/*,application/pdf" onChange={handleSetlistImageUpload} className="text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-bold file:bg-amber-500 file:text-gray-950 hover:file:bg-amber-600 cursor-pointer" />
                         </div>
                         {eventSetlistImage && (
@@ -1474,16 +1692,7 @@ export default function App() {
                                   <div className="flex items-center gap-2 mb-1 flex-wrap">
                                     <h3 className="text-[16px] font-bold text-gray-100 tracking-tight truncate">{ev.title}</h3>
                                     <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded uppercase tracking-wider ${ev.event_type === 'Auftritt' ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20' : ev.event_type === 'Band-Event' ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20' : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'}`}>{ev.event_type}</span>
-                                    
-                                    {/* NEU: AUFTRITTS-STATUS BADGES */}
-                                    {ev.event_type === 'Auftritt' && ev.gig_status === 'Angebot' && (
-                                       <span className="text-[10px] font-bold bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded uppercase ml-2 border border-amber-500/30">🟡 Angebot</span>
-                                    )}
-                                    {ev.event_type === 'Auftritt' && ev.gig_status === 'Steht fest' && (
-                                       <span className="text-[10px] font-bold bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded uppercase ml-2 border border-emerald-500/30">🟢 Fest</span>
-                                    )}
-
-                                    {isPast && <span className="text-[10px] font-bold bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded uppercase ml-2">⏳ Vergangen</span>}
+                                    {isPast && <span className="text-[10px] font-bold bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded uppercase">⏳ Vergangen</span>}
                                   </div>
                                   <div className="space-y-1 text-sm text-gray-400 mt-1">
                                     <div className="flex items-center gap-1.5"><span className="text-amber-500/80">🕒</span><span className="font-medium text-gray-300">{ev.event_time.substring(0, 5)} Uhr</span></div>
@@ -1741,60 +1950,6 @@ export default function App() {
                       );
                     })}
                   </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* VIEW: DATEIEN */}
-          {currentView === 'dateien' && !planningSetlistEvent && !planningSetlistTemplate && (
-            <div className="space-y-6">
-              <div className="flex justify-between items-center flex-wrap gap-3">
-                <h2 className="text-lg font-bold text-gray-300">📁 Dateien & Dokumente</h2>
-                <button onClick={() => setIsUploadingFile(!isUploadingFile)} className="bg-amber-500 hover:bg-amber-600 text-gray-950 text-sm font-bold px-3 py-2 rounded-xl transition-transform active:scale-95">
-                  {isUploadingFile ? 'Schließen' : '+ Datei hochladen'}
-                </button>
-              </div>
-
-              {isUploadingFile && (
-                <form onSubmit={handleFileUploadSubmit} className="bg-gray-900/90 border border-amber-500/20 p-5 rounded-2xl space-y-4 shadow-lg">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Bezeichnung / Titel</label>
-                      <input type="text" value={uploadFileTitle} onChange={(e) => setUploadFileTitle(e.target.value)} placeholder="z.B. Band Logos (ZIP)" className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500" required />
-                    </div>
-                    <div>
-                      <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Datei auswählen</label>
-                      <input type="file" onChange={(e) => setUploadFileObj(e.target.files?.[0] || null)} className="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-bold file:bg-gray-800 file:text-gray-300 hover:file:bg-gray-700 cursor-pointer" required />
-                    </div>
-                  </div>
-                  <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[16px] rounded-xl py-2.5 transition-colors">Hochladen & Speichern</button>
-                </form>
-              )}
-
-              <div className="relative">
-                <input type="text" value={fileSearchQuery} onChange={(e) => setFileSearchQuery(e.target.value)} placeholder="🔍 Nach Dateititel suchen..." className="w-full bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 text-[16px] text-white focus:outline-none focus:border-amber-500 shadow-sm" />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {bandFiles.filter(f => f.title.toLowerCase().includes(fileSearchQuery.toLowerCase())).length === 0 ? (
-                  <p className="text-sm text-gray-500 italic col-span-2">Keine Dateien gefunden.</p>
-                ) : (
-                  bandFiles.filter(f => f.title.toLowerCase().includes(fileSearchQuery.toLowerCase())).map(file => (
-                    <div key={file.id} className="bg-gray-900/40 border border-gray-800 p-4 rounded-xl flex flex-col justify-between shadow-sm">
-                      <div className="mb-3">
-                        <h3 className="text-[16px] font-bold text-gray-100">{file.title}</h3>
-                        <p className="text-[10px] text-gray-500 font-mono mt-1 truncate">{file.file_name}</p>
-                      </div>
-                      <div className="flex justify-between items-center mt-2 pt-3 border-t border-gray-800/60">
-                        <a href={file.file_url} target="_blank" rel="noopener noreferrer" download className="text-[12px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-3 py-1.5 rounded-lg hover:bg-blue-500/20 transition-colors font-bold">⬇️ Herunterladen</a>
-                        
-                        {(myProfile.can_manage_events || myProfile.is_admin || file.created_by === session.user.id) && (
-                          <button onClick={() => handleDeleteFile(file.id, file.file_url)} className="text-[12px] bg-red-500/10 text-red-400 px-2.5 py-1.5 rounded hover:bg-red-500/20 transition-colors">🗑️ Löschen</button>
-                        )}
-                      </div>
-                    </div>
-                  ))
                 )}
               </div>
             </div>
