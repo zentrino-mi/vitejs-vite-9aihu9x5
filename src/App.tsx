@@ -581,7 +581,35 @@ export default function App() {
       else { alert('Vorlage gespeichert!'); fetchSetlists(); }
     }
   };
+  const toggleSetlistStatus = async (templateId: string, currentStatus: string) => {
+    const newStatus = currentStatus === 'Final' ? 'In Bearbeitung' : 'Final';
+    const { error } = await supabase.from('setlists').update({ status: newStatus }).eq('id', templateId);
+    if (error) alert('Fehler beim Status ändern: ' + error.message);
+    else fetchSetlists();
+  };
 
+  const exportTemplatePdfDirectly = (template: any) => {
+    if (!template.setlist_data || template.setlist_data.length === 0) return alert('Setlist ist leer.');
+    const doc = new jsPDF();
+    doc.setFontSize(22); doc.setTextColor(0, 0, 0);
+    doc.text(`Setlist: ${template.title}`, 10, 20);
+    let y = 35; let totalSecs = 0;
+
+    template.setlist_data.forEach((set: any) => {
+      doc.setFontSize(16); doc.setFont("helvetica", "bold"); doc.text(set.name, 10, y); y += 10;
+      let setSecs = 0; doc.setFont("helvetica", "normal");
+      
+      set.songs.forEach((s: any, idx: number) => {
+        doc.setFontSize(14); doc.text(`${idx + 1}. ${s.title} ${s.artist ? `(${s.artist})` : ''}`, 15, y);
+        if (s.duration) { doc.text(s.duration, 180, y, { align: 'right' }); setSecs += parseDuration(s.duration); }
+        y += 8;
+      });
+      totalSecs += setSecs; doc.setFontSize(12); doc.setFont("helvetica", "italic"); doc.text(`Dauer ${set.name}: ${formatDuration(setSecs)} Min.`, 15, y + 2);
+      y += 15; if (y > 270) { doc.addPage(); y = 20; }
+    });
+    doc.setFontSize(16); doc.setFont("helvetica", "bold"); doc.text(`Gesamte Spielzeit: ${formatDuration(totalSecs)} Min.`, 10, y + 10);
+    doc.save(`${template.title.replace(/\s+/g, '_')}.pdf`);
+  };
   const handleCreateTemplate = async () => {
     const title = window.prompt('Name der Setlist-Vorlage (z.B. "Standard 2h Programm"):');
     if (!title || title.trim() === '') return;
@@ -1511,16 +1539,30 @@ export default function App() {
                     return (
                       <div key={template.id} className="bg-gray-900/40 border border-gray-800 p-4 rounded-xl flex flex-col justify-between shadow-sm">
                         <div className="mb-4 border-b border-gray-800 pb-3">
-                          <h3 className="text-[16px] font-bold text-gray-100 mb-1">{template.title}</h3>
+                          <div className="flex justify-between items-start mb-2 gap-2">
+                            <h3 className="text-[16px] font-bold text-gray-100">{template.title}</h3>
+                            <button 
+                              onClick={() => myProfile?.app_rolle !== 'Techniker' && toggleSetlistStatus(template.id, template.status)} 
+                              className={`text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wider border shrink-0 transition-colors ${template.status === 'Final' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/30' : 'bg-amber-500/20 text-amber-400 border-amber-500/30 hover:bg-amber-500/30'} ${myProfile?.app_rolle === 'Techniker' ? 'cursor-default' : 'cursor-pointer'}`}
+                            >
+                              {template.status === 'Final' ? '🟢 Final' : '🟡 In Bearbeitung'}
+                            </button>
+                          </div>
                           <div className="flex gap-3 text-[12px] text-gray-400">
                             <span className="bg-gray-800 px-2 py-0.5 rounded">Sets: {template.setlist_data?.length || 0}</span>
                             <span className="bg-gray-800 px-2 py-0.5 rounded text-amber-500 font-mono">Dauer: {formatDuration(totalSecs)} Min</span>
                           </div>
                         </div>
-                        <div className="flex justify-end gap-2">
-                          <button onClick={() => startSetlistLiveMode(template)} className="text-[12px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-3 py-1.5 rounded-lg hover:bg-emerald-500/20 transition-colors font-bold">🎤 Live starten</button>
-                          <button onClick={() => openSetlistPlannerForTemplate(template)} className="text-[12px] bg-amber-500/10 text-amber-500 border border-amber-500/20 px-3 py-1.5 rounded-lg hover:bg-amber-500/20 transition-colors font-bold">✏️ Bearbeiten</button>
-                          <button onClick={() => handleDeleteTemplate(template.id)} className="text-[12px] bg-red-500/10 text-red-400 border border-red-500/20 px-3 py-1.5 rounded-lg hover:bg-red-500/20 transition-colors">🗑️ Löschen</button>
+                        <div className="flex justify-end gap-2 flex-wrap">
+                          <button onClick={() => exportTemplatePdfDirectly(template)} className="text-[12px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-3 py-1.5 rounded-lg hover:bg-blue-500/20 transition-colors font-bold">📄 PDF</button>
+                          <button onClick={() => startSetlistLiveMode(template)} className="text-[12px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-3 py-1.5 rounded-lg hover:bg-emerald-500/20 transition-colors font-bold">🎤 Live</button>
+                          
+                          {myProfile?.app_rolle !== 'Techniker' && (
+                            <>
+                              <button onClick={() => openSetlistPlannerForTemplate(template)} className="text-[12px] bg-amber-500/10 text-amber-500 border border-amber-500/20 px-3 py-1.5 rounded-lg hover:bg-amber-500/20 transition-colors font-bold">✏️ Bearbeiten</button>
+                              <button onClick={() => handleDeleteTemplate(template.id)} className="text-[12px] bg-red-500/10 text-red-400 border border-red-500/20 px-3 py-1.5 rounded-lg hover:bg-red-500/20 transition-colors">🗑️ Löschen</button>
+                            </>
+                          )}
                         </div>
                       </div>
                     );
