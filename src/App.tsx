@@ -1099,7 +1099,10 @@ export default function App() {
     });
   };
 
-  const typeFilteredEvents = events.filter(ev => activeFilter === 'all' || ev.event_type === activeFilter);
+  const typeFilteredEvents = events.filter(ev => {
+    if (myProfile?.app_rolle === 'Techniker' && ev.event_type !== 'Auftritt') return false;
+    return activeFilter === 'all' || ev.event_type === activeFilter;
+  });
   const upcomingEventsList = typeFilteredEvents.filter(ev => !isPastEvent(ev.event_date));
   const pastEventsList = typeFilteredEvents.filter(ev => isPastEvent(ev.event_date));
   
@@ -1206,11 +1209,11 @@ export default function App() {
               )}
               
               <button onClick={() => navigateTo('termine')} className={`text-2xl font-bold ${currentView === 'termine' ? 'text-amber-500' : 'text-gray-500'}`}>📅 Termine</button>
-              <button onClick={() => navigateTo('songs')} className={`text-2xl font-bold ${currentView === 'songs' ? 'text-amber-500' : 'text-gray-500'}`}>🎵 Songs</button>
+              {myProfile?.app_rolle !== 'Techniker' && <button onClick={() => navigateTo('songs')} className={`text-2xl font-bold ${currentView === 'songs' ? 'text-amber-500' : 'text-gray-500'}`}>🎵 Songs</button>}
               <button onClick={() => navigateTo('setlisten')} className={`text-2xl font-bold ${currentView === 'setlisten' ? 'text-amber-500' : 'text-gray-500'}`}>📋 Setlisten</button>
               <button onClick={() => navigateTo('dateien')} className={`text-2xl font-bold ${currentView === 'dateien' ? 'text-amber-500' : 'text-gray-500'}`}>📁 Dateien</button>
-              <button onClick={() => { navigateTo('kalender'); loadAbsenceFormDefaults(); }} className={`text-2xl font-bold ${currentView === 'kalender' ? 'text-amber-500' : 'text-gray-500'}`}>🌴 Kalender / Urlaub</button>
-              <button onClick={() => navigateTo('bandkasse')} className={`text-2xl font-bold ${currentView === 'bandkasse' ? 'text-amber-500' : 'text-gray-500'}`}>💰 Bandkasse</button>
+              {myProfile?.app_rolle !== 'Techniker' && <button onClick={() => { navigateTo('kalender'); loadAbsenceFormDefaults(); }} className={`text-2xl font-bold ${currentView === 'kalender' ? 'text-amber-500' : 'text-gray-500'}`}>🌴 Kalender / Urlaub</button>}
+              {myProfile?.app_rolle !== 'Techniker' && <button onClick={() => navigateTo('bandkasse')} className={`text-2xl font-bold ${currentView === 'bandkasse' ? 'text-amber-500' : 'text-gray-500'}`}>💰 Bandkasse</button>}
               
               {myProfile.is_admin && (
                 <button onClick={() => navigateTo('verwaltung')} className={`text-2xl font-bold flex items-center gap-3 ${currentView === 'verwaltung' ? 'text-amber-500' : 'text-gray-500'}`}>
@@ -1810,15 +1813,19 @@ export default function App() {
                                   </div>
 
                                   <div className="mt-2.5 flex gap-2 flex-wrap">
-                                    <button type="button" onClick={() => startEditEvent(ev)} className="text-[12px] text-gray-400 hover:text-white bg-gray-950 border border-gray-800 px-2.5 py-1 rounded-lg transition-colors">✏️ Bearbeiten</button>
+                                  {myProfile?.app_rolle !== 'Techniker' && (
+                                      <button type="button" onClick={() => startEditEvent(ev)} className="text-[12px] text-gray-400 hover:text-white bg-gray-950 border border-gray-800 px-2.5 py-1 rounded-lg transition-colors">✏️ Bearbeiten</button>
+                                    )}
                                     
-                                    {ev.event_type === 'Auftritt' && (myProfile.can_manage_events || myProfile.is_admin) && (
+                                    {ev.event_type === 'Auftritt' && myProfile?.app_rolle !== 'Techniker' && (
                                       <button type="button" onClick={() => openSetlistPlannerForEvent(ev)} className="text-[12px] bg-amber-500/10 border border-amber-500/20 text-amber-500 font-bold px-2.5 py-1 rounded-lg hover:bg-amber-500/20 transition-colors">
                                         📋 Setlist planen
                                       </button>
                                     )}
 
-                                    <button type="button" onClick={() => handleDeleteEvent(ev.id)} className="text-[12px] text-red-400 hover:text-red-350 bg-red-500/10 border border-red-500/20 px-2.5 py-1 rounded-lg transition-colors">🗑️ Löschen</button>
+                                    {myProfile?.app_rolle !== 'Techniker' && (
+                                      <button type="button" onClick={() => handleDeleteEvent(ev.id)} className="text-[12px] text-red-400 hover:text-red-350 bg-red-500/10 border border-red-500/20 px-2.5 py-1 rounded-lg transition-colors">🗑️ Löschen</button>
+                                    )}
                                   </div>
                                 </div>
 
@@ -1846,7 +1853,7 @@ export default function App() {
                                     <div className="bg-purple-950/20 border border-purple-900/30 p-3 rounded-xl mb-3 space-y-2">
                                       <h4 className="font-bold text-purple-400 uppercase tracking-wider text-[12px] mb-1 flex justify-between items-center">
                                         <span>🎤 Auftritts-Details</span>
-                                        {(myProfile.can_manage_events || myProfile.is_admin) && ev.gage && (
+                                        {myProfile?.app_rolle !== 'Techniker' && ev.gage && (
                                           <span className="text-emerald-400 font-mono text-sm bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
                                             Gage: {ev.gage} €
                                           </span>
@@ -2099,13 +2106,18 @@ export default function App() {
                             </select>
                           </td>
                           <td className="py-4">
-                            {p.is_admin ? (
-                              <span className="text-[12px] px-2 py-1 rounded-md border bg-purple-500/10 text-purple-400 border-purple-500/30 font-bold">👑 Haupt-Admin</span>
-                            ) : (
-                              <button onClick={() => togglePermission(p.id, 'can_manage_events', p.can_manage_events)} className={`text-[12px] px-2 py-1 rounded-md border transition-colors ${p.can_manage_events ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20' : 'bg-transparent text-gray-400 border-gray-800 hover:border-gray-600'}`}>
-                                {p.can_manage_events ? '🟢 Admin (Events)' : '🔴 Standard'}
-                              </button>
-                            )}
+                            <select
+                              value={p.app_rolle || 'Musiker'}
+                              onChange={async (e) => {
+                                await supabase.from('profiles').update({ app_rolle: e.target.value, is_admin: e.target.value === 'Admin' }).eq('id', p.id);
+                                fetchAllProfiles();
+                              }}
+                              className={`text-[12px] font-bold px-2 py-1 rounded-md border focus:outline-none cursor-pointer ${p.app_rolle === 'Admin' ? 'bg-purple-500/10 text-purple-400 border-purple-500/30' : p.app_rolle === 'Techniker' ? 'bg-blue-500/10 text-blue-400 border-blue-500/30' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'}`}
+                            >
+                              <option value="Admin">👑 Admin</option>
+                              <option value="Musiker">🎸 Musiker</option>
+                              <option value="Techniker">🎛️ Techniker</option>
+                            </select>
                           </td>
                           <td className="py-4 text-right">
                             {isMe || p.is_admin ? (
