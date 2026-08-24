@@ -78,7 +78,11 @@ export default function App() {
   const [eventDescription, setEventDescription] = useState('');
   const [eventType, setEventType] = useState<'Probe' | 'Auftritt' | 'Band-Event'>('Probe');
   
-  const [eventGigStatus, setEventGigStatus] = useState<'Angebot' | 'Steht fest'>('Steht fest');
+  const [eventGigStatus, setEventGigStatus] = useState<'Angebot' | 'Steht fest' | 'Abgesagt'>('Steht fest');
+  const [setlistOverviewSearchQuery, setSetlistOverviewSearchQuery] = useState('');
+  const [liveSetlistMode, setLiveSetlistMode] = useState(false);
+  const [liveSetlistSongs, setLiveSetlistSongs] = useState<any[]>([]);
+  const [liveSongIndex, setLiveSongIndex] = useState(0);
   const [eventGage, setEventGage] = useState('');
   const [eventPlayTime, setEventPlayTime] = useState('');
   const [eventPlayTimeStart, setEventPlayTimeStart] = useState('');
@@ -235,7 +239,32 @@ export default function App() {
       loop();
     }
   };
+  const startSetlistLiveMode = (template: any) => {
+    if (!confirm(`Möchtest du den Live-Modus für "${template.title}" starten?`)) return;
+    const flattenedSongs: any[] = [];
+    template.setlist_data?.forEach((set: any) => {
+      set.songs?.forEach((songData: any) => {
+        const fullSong = songs.find(s => s.id === songData.id) || songData;
+        flattenedSongs.push(fullSong);
+      });
+    });
+    if (flattenedSongs.length === 0) return alert('Diese Setlist enthält noch keine Songs!');
+    setLiveSetlistSongs(flattenedSongs); setLiveSongIndex(0); setSelectedSong(flattenedSongs[0]); setLiveSetlistMode(true); setIsLiveMode(true);
+  };
 
+  const nextLiveSong = () => {
+    if (liveSongIndex < liveSetlistSongs.length - 1) {
+      setIsMetronomePlaying(false); window.clearTimeout(nextTickRef.current); setIsScrolling(false);
+      const newIndex = liveSongIndex + 1; setLiveSongIndex(newIndex); setSelectedSong(liveSetlistSongs[newIndex]);
+    }
+  };
+
+  const prevLiveSong = () => {
+    if (liveSongIndex > 0) {
+      setIsMetronomePlaying(false); window.clearTimeout(nextTickRef.current); setIsScrolling(false);
+      const newIndex = liveSongIndex - 1; setLiveSongIndex(newIndex); setSelectedSong(liveSetlistSongs[newIndex]);
+    }
+  };
   const fetchProfile = async (userId: string) => {
     const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
     if (data) {
@@ -1122,14 +1151,21 @@ export default function App() {
                  <h2 className="text-2xl sm:text-4xl font-black text-amber-500">{selectedSong.title}</h2>
                  <p className="text-gray-400 font-bold text-lg mt-1">{selectedSong.artist}</p>
                </div>
-               <div className="flex gap-2 sm:gap-4 flex-wrap justify-end">
+               <div className="flex gap-2 sm:gap-4 flex-wrap justify-end items-center">
+                 {liveSetlistMode && (
+                   <div className="flex gap-2 mr-2 border-r border-gray-800 pr-4">
+                     <button onClick={prevLiveSong} disabled={liveSongIndex === 0} className="px-4 py-3 bg-gray-800 disabled:opacity-30 rounded-xl font-bold text-lg hover:bg-gray-700">⏮ Zurück</button>
+                     <div className="px-3 py-3 font-mono text-gray-400 font-bold bg-gray-900 rounded-xl">{liveSongIndex + 1} / {liveSetlistSongs.length}</div>
+                     <button onClick={nextLiveSong} disabled={liveSongIndex === liveSetlistSongs.length - 1} className="px-4 py-3 bg-gray-800 disabled:opacity-30 rounded-xl font-bold text-lg hover:bg-gray-700">Weiter ⏭</button>
+                   </div>
+                 )}
                  <button onClick={() => setIsScrolling(!isScrolling)} className={`px-4 py-3 rounded-xl font-bold text-lg transition-colors shadow-lg ${isScrolling ? 'bg-blue-500 text-white' : 'bg-gray-800 hover:bg-gray-700'}`}>
-                   {isScrolling ? '⏸ Pause' : '▶️ Auto-Scroll'}
+                   {isScrolling ? '⏸ Pause' : '▶️ Scroll'}
                  </button>
                  <button onClick={() => toggleMetronome(selectedSong.bpm)} className={`px-4 py-3 rounded-xl font-bold text-lg transition-all shadow-lg ${isMetronomePlaying ? 'bg-red-500 text-white shadow-[0_0_20px_rgba(239,68,68,0.6)]' : 'bg-gray-800 hover:bg-gray-700'}`}>
                    ⏱ {selectedSong.bpm || '?'} BPM
                  </button>
-                 <button onClick={() => setIsLiveMode(false)} className="px-4 py-3 bg-gray-900 border border-gray-700 rounded-xl text-lg font-bold hover:bg-gray-800">X Schließen</button>
+                 <button onClick={() => { setIsLiveMode(false); setLiveSetlistMode(false); }} className="px-4 py-3 bg-red-500/20 text-red-400 border border-red-500/50 rounded-xl text-lg font-bold hover:bg-red-500/30">X</button>
                </div>
              </div>
              <div className="text-2xl sm:text-3xl leading-[1.8] font-sans whitespace-pre-wrap px-4 pb-[50vh] text-gray-100">
@@ -1455,6 +1491,10 @@ export default function App() {
                 </button>
               </div>
 
+              <div className="relative mb-4">
+                <input type="text" value={setlistOverviewSearchQuery} onChange={(e) => setSetlistOverviewSearchQuery(e.target.value)} placeholder="🔍 Nach Setlist-Name suchen..." className="w-full bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 text-[16px] text-white focus:outline-none focus:border-amber-500 shadow-sm" />
+              </div>
+
               {savedSetlists.length === 0 ? (
                 <div className="bg-gray-900/60 border border-gray-800 p-8 rounded-2xl text-center">
                   <p className="text-gray-400 mb-2">Ihr habt noch keine Vorlagen erstellt.</p>
@@ -1462,7 +1502,7 @@ export default function App() {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {savedSetlists.map(template => {
+                  {savedSetlists.filter(s => s.title.toLowerCase().includes(setlistOverviewSearchQuery.toLowerCase())).map(template => {
                     const totalSecs = calculateTemplateDuration(template.setlist_data);
                     
                     return (
@@ -1475,6 +1515,7 @@ export default function App() {
                           </div>
                         </div>
                         <div className="flex justify-end gap-2">
+                          <button onClick={() => startSetlistLiveMode(template)} className="text-[12px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-3 py-1.5 rounded-lg hover:bg-emerald-500/20 transition-colors font-bold">🎤 Live starten</button>
                           <button onClick={() => openSetlistPlannerForTemplate(template)} className="text-[12px] bg-amber-500/10 text-amber-500 border border-amber-500/20 px-3 py-1.5 rounded-lg hover:bg-amber-500/20 transition-colors font-bold">✏️ Bearbeiten</button>
                           <button onClick={() => handleDeleteTemplate(template.id)} className="text-[12px] bg-red-500/10 text-red-400 border border-red-500/20 px-3 py-1.5 rounded-lg hover:bg-red-500/20 transition-colors">🗑️ Löschen</button>
                         </div>
@@ -1632,6 +1673,7 @@ export default function App() {
                           <select value={eventGigStatus} onChange={(e: any) => setEventGigStatus(e.target.value)} className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500">
                             <option value="Steht fest">🟢 Steht fest / Gebucht</option>
                             <option value="Angebot">🟡 Nur Angebot / Angefragt</option>
+                            <option value="Abgesagt">🔴 Abgesagt</option>
                           </select>
                         </div>
                         <div>
@@ -1745,6 +1787,9 @@ export default function App() {
                                     )}
                                     {ev.event_type === 'Auftritt' && ev.gig_status === 'Steht fest' && (
                                        <span className="text-[10px] font-bold bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded uppercase ml-2 border border-emerald-500/30">🟢 Fest</span>
+                                    )}
+                                    {ev.event_type === 'Auftritt' && ev.gig_status === 'Abgesagt' && (
+                                       <span className="text-[10px] font-bold bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded uppercase ml-2 border border-red-500/30 line-through">🔴 Abgesagt</span>
                                     )}
 
                                     {isPast && <span className="text-[10px] font-bold bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded uppercase ml-2">⏳ Vergangen</span>}
