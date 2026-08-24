@@ -2027,7 +2027,7 @@ export default function App() {
                       <th className="pb-3">Rechte</th>
                       <th className="pb-3 text-right">Zugang</th>
                     </tr>
-                  </thead>
+                  </thead>S
                   <tbody className="divide-y divide-gray-800/40">
                     {allProfiles.map((p) => {
                       const isMe = p.id === session.user.id;
