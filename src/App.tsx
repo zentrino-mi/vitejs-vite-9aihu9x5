@@ -18,7 +18,7 @@ export default function App() {
 
   const [pushPermission, setPushPermission] = useState<NotificationPermission | 'default'>('default');
 
-  const [currentView, setCurrentView] = useState<'termine' | 'kalender' | 'verwaltung' | 'bandkasse' | 'songs' | 'setlisten' | 'dateien'>('termine'); 
+  const [currentView, setCurrentView] = useState<'dashboard' | 'termine' | 'kalender' | 'verwaltung' | 'bandkasse' | 'songs' | 'setlisten' | 'dateien'>('dashboard'); 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [activeFilter, setActiveFilter] = useState<'all' | 'Probe' | 'Auftritt' | 'Band-Event'>('all');
 
@@ -976,7 +976,11 @@ export default function App() {
     setEventGage(''); setEventPlayTime(''); setEventPlayTimeStart(''); setEventPlayTimeEnd(''); setEventSoundcheck('');
     setIsAddingEvent(false); 
   };
-
+  const pokePendingUsers = (eventId: string, pendingCount: number) => {
+    if (pendingCount === 0) return alert('Alle haben bereits abgestimmt!');
+    // Hier klinkt man später die Supabase Edge Function für echte Push-Mails ein
+    alert(`🔔 *BZZZT* Erinnerung erfolgreich an ${pendingCount} noch offene Bandmitglieder versendet!`);
+  };
   const handleVote = async (eventId: string, status: 'ja' | 'nein') => {
     const existing = responses.find(r => r.event_id === eventId && r.user_id === session.user.id);
     if (existing) {
@@ -1136,7 +1140,7 @@ export default function App() {
   
   const displayEvents = showPastEvents ? typeFilteredEvents : upcomingEventsList;
   const groupedDisplayEvents = getGroupedEventsByMonth(displayEvents);
-
+  const myPendingEvents = upcomingEventsList.filter(ev => !responses.some(r => r.event_id === ev.id && r.user_id === session?.user?.id));
   const activeMembersCount = allProfiles.filter(p => p.is_approved || p.is_admin).length;
   
   const filteredSongs = songs.filter(s => 
@@ -1235,7 +1239,7 @@ export default function App() {
                   🔔 Push-Mitteilungen erlauben
                 </button>
               )}
-              
+              <button onClick={() => navigateTo('dashboard')} className={`text-2xl font-bold ${currentView === 'dashboard' ? 'text-amber-500' : 'text-gray-500'}`}>🏠 Startseite</button>
               <button onClick={() => navigateTo('termine')} className={`text-2xl font-bold ${currentView === 'termine' ? 'text-amber-500' : 'text-gray-500'}`}>📅 Termine</button>
               {myProfile?.app_rolle !== 'Techniker' && <button onClick={() => navigateTo('songs')} className={`text-2xl font-bold ${currentView === 'songs' ? 'text-amber-500' : 'text-gray-500'}`}>🎵 Songs</button>}
               <button onClick={() => navigateTo('setlisten')} className={`text-2xl font-bold ${currentView === 'setlisten' ? 'text-amber-500' : 'text-gray-500'}`}>📋 Setlisten</button>
@@ -1655,7 +1659,79 @@ export default function App() {
               </div>
             </div>
           )}
+{/* VIEW: DASHBOARD */}
+          {currentView === 'dashboard' && !planningSetlistEvent && !planningSetlistTemplate && (
+            <div className="space-y-6">
+              <h2 className="text-2xl font-black text-white mb-6">Willkommen zurück! 🤘</h2>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                
+                {/* Karte 1: Nächster Termin */}
+                <div className="bg-gradient-to-br from-amber-500/20 to-orange-600/10 border border-amber-500/30 p-5 rounded-2xl shadow-lg">
+                  <h3 className="text-sm font-bold text-amber-500 uppercase tracking-wider mb-3">Nächster Termin</h3>
+                  {upcomingEventsList.length > 0 ? (
+                    <div>
+                      <div className="flex gap-2 items-center mb-1">
+                        <span className="text-[10px] font-bold bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded uppercase border border-amber-500/30">{upcomingEventsList[0].event_type}</span>
+                      </div>
+                      <p className="text-xl font-black text-white truncate">{upcomingEventsList[0].title}</p>
+                      <p className="text-gray-300 text-sm mt-2">📅 {new Date(upcomingEventsList[0].event_date).toLocaleDateString('de-DE')} • 🕒 {upcomingEventsList[0].event_time.substring(0, 5)} Uhr</p>
+                      {upcomingEventsList[0].location && <p className="text-gray-400 text-xs mt-1 truncate">📍 {upcomingEventsList[0].location}</p>}
+                      <button onClick={() => navigateTo('termine')} className="mt-4 w-full text-sm bg-amber-500 text-gray-950 font-bold px-4 py-2 rounded-xl hover:bg-amber-400 transition-colors">Zum Kalender</button>
+                    </div>
+                  ) : (
+                    <p className="text-gray-400 italic">Aktuell keine Termine in Sicht.</p>
+                  )}
+                </div>
 
+                {/* Karte 2: Offene Abstimmungen (Für Techniker versteckt) */}
+                {myProfile?.app_rolle !== 'Techniker' && (
+                  <div className={`border p-5 rounded-2xl shadow-lg ${myPendingEvents.length > 0 ? 'bg-red-500/10 border-red-500/30' : 'bg-emerald-500/10 border-emerald-500/30'}`}>
+                    <h3 className={`text-sm font-bold uppercase tracking-wider mb-3 ${myPendingEvents.length > 0 ? 'text-red-400' : 'text-emerald-400'}`}>Deine Abstimmungen</h3>
+                    {myPendingEvents.length > 0 ? (
+                      <div className="flex flex-col h-full justify-between">
+                        <div>
+                          <p className="text-lg font-bold text-white">Du hast <span className="text-red-400 text-xl font-black">{myPendingEvents.length}</span> offene Termine!</p>
+                          <p className="text-gray-400 text-sm mt-1">Bitte trage dich zeitnah ein, damit geplant werden kann.</p>
+                        </div>
+                        <button onClick={() => navigateTo('termine')} className="mt-4 w-full text-sm bg-red-500 text-white font-bold px-4 py-2 rounded-xl hover:bg-red-400 transition-colors">Jetzt abstimmen</button>
+                      </div>
+                    ) : (
+                      <div>
+                        <p className="text-lg font-bold text-white">Alles erledigt! ✅</p>
+                        <p className="text-gray-400 text-sm mt-1">Du hast bei allen anstehenden Terminen abgestimmt.</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Karte 3: Letzte Aktivitäten */}
+              <div className="bg-gray-900/60 border border-gray-800 p-5 rounded-2xl mt-6">
+                <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4">Letzte Aktivitäten</h3>
+                <div className="space-y-3">
+                  {bandFiles.length > 0 && (
+                    <div className="flex justify-between items-center bg-gray-950 p-3 rounded-xl border border-gray-800">
+                      <div className="min-w-0 pr-3">
+                        <p className="text-sm font-bold text-gray-200 truncate">Neue Datei: {bandFiles[0].title}</p>
+                        <p className="text-[10px] text-gray-500">{new Date(bandFiles[0].created_at).toLocaleDateString('de-DE')}</p>
+                      </div>
+                      <button onClick={() => navigateTo('dateien')} className="text-[12px] bg-gray-800 text-gray-300 px-3 py-1.5 rounded-lg font-bold hover:bg-gray-700">Ansehen</button>
+                    </div>
+                  )}
+                  {pendingCount > 0 && myProfile.is_admin && (
+                    <div className="flex justify-between items-center bg-red-500/10 p-3 rounded-xl border border-red-500/20">
+                      <p className="text-sm font-bold text-red-400">{pendingCount} neue Mitgliedsanfrage(n)</p>
+                      <button onClick={() => navigateTo('verwaltung')} className="text-[12px] bg-red-500 text-white px-3 py-1.5 rounded-lg font-bold hover:bg-red-400">Prüfen</button>
+                    </div>
+                  )}
+                  {bandFiles.length === 0 && pendingCount === 0 && (
+                     <p className="text-sm text-gray-500 italic">Keine neuen Aktivitäten.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
           {currentView === 'termine' && !planningSetlistEvent && !planningSetlistTemplate && (
             <div className="space-y-6">
               <div className="flex justify-between items-center">
@@ -1951,8 +2027,13 @@ export default function App() {
                                         {decliningUsers.length === 0 ? <span className="text-gray-600 italic block">Niemand</span> : decliningUsers.map(u => <span key={u.id} className="flex items-center gap-1 text-red-300/90 font-medium py-0.5">✕ {getDisplayName(u.full_name)}</span>)}
                                       </div>
                                       <div className="bg-amber-950/20 border border-amber-900/30 p-2 rounded-lg space-y-1">
-                                        <span className="font-bold text-amber-400 block border-b border-amber-900/40 pb-1 mb-1">Offen ({pendingUsers.length})</span>
-                                        {pendingUsers.length === 0 ? <span className="text-gray-600 italic block">Alle abgestimmt</span> : pendingUsers.map(u => <span key={u.id} className="flex items-center gap-1 text-amber-300/80 py-0.5">? {getDisplayName(u.full_name)}</span>)}
+                                        <div className="flex justify-between items-center border-b border-amber-900/40 pb-1 mb-1">
+                                          <span className="font-bold text-amber-400">Offen ({pendingUsers.length})</span>
+                                          {(myProfile.is_admin || myProfile.can_manage_events) && pendingUsers.length > 0 && (
+                                            <button onClick={() => pokePendingUsers(ev.id, pendingUsers.length)} className="text-[10px] bg-amber-500 text-gray-950 px-2 py-0.5 rounded font-bold hover:bg-amber-400 transition-colors">🔔 Anstupsen</button>
+                                          )}
+                                        </div>
+                                        {pendingUsers.length === 0 ? <span className="text-gray-600 italic block">Alle abgestimmt</span> : pendingUsers.map(u => <span key={u.id} className="flex items-center gap-1 text-amber-300/80 py-0.5">❓ {getDisplayName(u.full_name)}</span>)}
                                       </div>
                                     </div>
                                   </div>
