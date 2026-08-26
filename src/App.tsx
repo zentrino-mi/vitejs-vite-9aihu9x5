@@ -13,12 +13,23 @@ export default function App() {
   const [message, setMessage] = useState({ text: '', isError: false });
 
   const [session, setSession] = useState<any>(null);
+  const [veranstalter, setVeranstalter] = useState<any[]>([]);
+  const [ansprechpartner, setAnsprechpartner] = useState<any[]>([]);
+  const [crmSearch, setCrmSearch] = useState('');
+  const [expandedVeranstalter, setExpandedVeranstalter] = useState<string | null>(null);
+
+  const fetchCrmData = async () => {
+    const { data: vData } = await supabase.from('veranstalter').select('*').order('name');
+    if (vData) setVeranstalter(vData);
+    const { data: aData } = await supabase.from('ansprechpartner').select('*').order('name');
+    if (aData) setAnsprechpartner(aData);
+  };
   const [myProfile, setMyProfile] = useState<any>(null);
   const [allProfiles, setAllProfiles] = useState<any[]>([]);
 
   const [pushPermission, setPushPermission] = useState<NotificationPermission | 'default'>('default');
 
-  const [currentView, setCurrentView] = useState<'dashboard' | 'termine' | 'kalender' | 'verwaltung' | 'bandkasse' | 'songs' | 'setlisten' | 'dateien'>('dashboard'); 
+  const [currentView, setCurrentView] = useState<'dashboard' | 'termine' | 'kalender' | 'verwaltung' | 'bandkasse' | 'songs' | 'setlisten' | 'dateien' | 'kontakte'>('dashboard');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [activeFilter, setActiveFilter] = useState<'all' | 'Probe' | 'Auftritt' | 'Band-Event'>('all');
 
@@ -190,7 +201,8 @@ export default function App() {
       fetchBandFiles(), 
       fetchFundBalance(),
       fetchTransactions(),
-      fetchMyNotes()
+      fetchMyNotes(),
+      fetchCrmData()
     ]);
   };
 
@@ -1244,6 +1256,9 @@ export default function App() {
               {myProfile?.app_rolle !== 'Techniker' && <button onClick={() => navigateTo('songs')} className={`text-2xl font-bold ${currentView === 'songs' ? 'text-amber-500' : 'text-gray-500'}`}>🎵 Songs</button>}
               <button onClick={() => navigateTo('setlisten')} className={`text-2xl font-bold ${currentView === 'setlisten' ? 'text-amber-500' : 'text-gray-500'}`}>📋 Setlisten</button>
               <button onClick={() => navigateTo('dateien')} className={`text-2xl font-bold ${currentView === 'dateien' ? 'text-amber-500' : 'text-gray-500'}`}>📁 Dateien</button>
+              {(myProfile?.is_admin || myProfile?.can_view_contacts) && (
+                <button onClick={() => { navigateTo('kontakte'); fetchCrmData(); }} className={`text-2xl font-bold ${currentView === 'kontakte' ? 'text-amber-500' : 'text-gray-500'}`}>📇 Kontakte</button>
+              )}
               {myProfile?.app_rolle !== 'Techniker' && <button onClick={() => { navigateTo('kalender'); loadAbsenceFormDefaults(); }} className={`text-2xl font-bold ${currentView === 'kalender' ? 'text-amber-500' : 'text-gray-500'}`}>🌴 Kalender / Urlaub</button>}
               {myProfile?.app_rolle !== 'Techniker' && <button onClick={() => navigateTo('bandkasse')} className={`text-2xl font-bold ${currentView === 'bandkasse' ? 'text-amber-500' : 'text-gray-500'}`}>💰 Bandkasse</button>}
               
@@ -1655,6 +1670,105 @@ export default function App() {
                       )}
                     </div>
                   ))
+                )}
+              </div>
+            </div>
+          )}
+          {/* VIEW: CRM / KONTAKTE */}
+          {currentView === 'kontakte' && (
+            <div className="space-y-6">
+              <div className="flex justify-between items-center">
+                <h2 className="text-2xl font-black text-white">Veranstalter & Kontakte</h2>
+                <button 
+                  onClick={async () => {
+                    const name = prompt('Name des Veranstalters (z.B. Stadtfest Köln):');
+                    if (name) {
+                      await supabase.from('veranstalter').insert([{ name }]);
+                      fetchCrmData();
+                    }
+                  }} 
+                  className="bg-amber-500 text-gray-950 px-4 py-2 rounded-xl font-bold hover:bg-amber-400 transition-colors"
+                >
+                  + Veranstalter
+                </button>
+              </div>
+
+              <input 
+                type="text" 
+                value={crmSearch} 
+                onChange={(e) => setCrmSearch(e.target.value)} 
+                placeholder="🔍 Nach Veranstalter suchen..." 
+                className="w-full bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 text-white focus:border-amber-500 outline-none transition-colors" 
+              />
+
+              <div className="space-y-4">
+                {veranstalter.filter(v => v.name.toLowerCase().includes(crmSearch.toLowerCase())).map(v => (
+                  <div key={v.id} className="bg-gray-900/60 border border-gray-800 rounded-xl overflow-hidden shadow-sm">
+                    <div 
+                      className="p-4 flex justify-between items-center cursor-pointer hover:bg-gray-800/50 transition-colors"
+                      onClick={() => setExpandedVeranstalter(expandedVeranstalter === v.id ? null : v.id)}
+                    >
+                      <h3 className="text-lg font-bold text-gray-100">{v.name}</h3>
+                      <span className="text-gray-500">{expandedVeranstalter === v.id ? '▼' : '▶'}</span>
+                    </div>
+
+                    {expandedVeranstalter === v.id && (
+                      <div className="p-4 border-t border-gray-800 bg-gray-950/50">
+                        <div className="flex justify-end mb-4">
+                          <button 
+                            onClick={async () => {
+                              const name = prompt('Name des Ansprechpartners:');
+                              if (!name) return;
+                              const kategorie = prompt('Kategorie (z.B. Booking, Technik, Catering, Presse):') || 'Allgemein';
+                              const telefon = prompt('Telefonnummer (optional):');
+                              const email = prompt('E-Mail (optional):');
+                              await supabase.from('ansprechpartner').insert([{ veranstalter_id: v.id, name, kategorie, telefon, email }]);
+                              fetchCrmData();
+                            }} 
+                            className="text-[12px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-3 py-1.5 rounded-lg font-bold hover:bg-emerald-500/20 transition-colors"
+                          >
+                            + Kontakt hinzufügen
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {ansprechpartner.filter(a => a.veranstalter_id === v.id).map(a => (
+                            <div key={a.id} className="bg-gray-900 border border-gray-800 p-3 rounded-lg flex flex-col gap-2 shadow-inner">
+                              <div className="flex justify-between items-start">
+                                <span className="font-bold text-white text-md">{a.name}</span>
+                                <span className="text-[10px] font-bold bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded uppercase border border-blue-500/30">{a.kategorie}</span>
+                              </div>
+                              <div className="flex flex-col gap-1 mt-1">
+                                {a.telefon && <a href={`tel:${a.telefon}`} className="text-sm text-gray-400 hover:text-amber-500 transition-colors">📞 {a.telefon}</a>}
+                                {a.email && <a href={`mailto:${a.email}`} className="text-sm text-gray-400 hover:text-amber-500 transition-colors">✉️ {a.email}</a>}
+                              </div>
+                              {myProfile?.is_admin && (
+                                <button 
+                                  onClick={async () => {
+                                    if(confirm('Möchtest du diesen Kontakt wirklich löschen?')) {
+                                      await supabase.from('ansprechpartner').delete().eq('id', a.id);
+                                      fetchCrmData();
+                                    }
+                                  }} 
+                                  className="text-[10px] text-red-500 self-end mt-2 opacity-50 hover:opacity-100 transition-opacity"
+                                >
+                                  Löschen
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                          {ansprechpartner.filter(a => a.veranstalter_id === v.id).length === 0 && (
+                            <p className="text-sm text-gray-600 italic border border-dashed border-gray-800 p-4 rounded-lg text-center">Noch keine Kontakte für diesen Veranstalter hinterlegt.</p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {veranstalter.length === 0 && (
+                  <div className="bg-gray-900/60 border border-gray-800 p-8 rounded-2xl text-center">
+                    <p className="text-gray-400">Noch keine Veranstalter angelegt.</p>
+                  </div>
                 )}
               </div>
             </div>
@@ -2241,6 +2355,18 @@ export default function App() {
                               <option value="Musiker">🎸 Musiker</option>
                               <option value="Techniker">🎛️ Techniker</option>
                             </select>
+                            <label className="flex items-center gap-2 mt-2 text-[12px] text-gray-300 cursor-pointer">
+                              <input 
+                                type="checkbox" 
+                                checked={p.can_view_contacts || false}
+                                onChange={async (e) => {
+                                  await supabase.from('profiles').update({ can_view_contacts: e.target.checked }).eq('id', p.id);
+                                  fetchAllProfiles();
+                                }}
+                                className="rounded bg-gray-900 border-gray-700 text-amber-500"
+                              />
+                              📇 CRM-Zugriff
+                            </label>
                           </td>
                           <td className="py-4 text-right">
                             {isMe || p.is_admin ? (
