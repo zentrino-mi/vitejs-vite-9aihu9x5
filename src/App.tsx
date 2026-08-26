@@ -25,7 +25,12 @@ export default function App() {
   const [newKontaktKategorie, setNewKontaktKategorie] = useState('Allgemein');
   const [newKontaktTelefon, setNewKontaktTelefon] = useState('');
   const [newKontaktEmail, setNewKontaktEmail] = useState('');
-
+  const [editingVeranstalterId, setEditingVeranstalterId] = useState<string | null>(null);
+  const [editingKontaktId, setEditingKontaktId] = useState<string | null>(null);
+  const [editKontaktName, setEditKontaktName] = useState('');
+  const [editKontaktKategorie, setEditKontaktKategorie] = useState('');
+  const [editKontaktTelefon, setEditKontaktTelefon] = useState('');
+  const [editKontaktEmail, setEditKontaktEmail] = useState('');
   const handleSaveVeranstalter = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newVeranstalterName.trim()) return;
@@ -46,7 +51,38 @@ export default function App() {
       setAddingKontaktFor(null); fetchCrmData();
     }
   };
+  const handleUpdateVeranstalter = async (e: React.FormEvent, id: string) => {
+    e.preventDefault();
+    if (!newVeranstalterName.trim()) return;
+    const { error } = await supabase.from('veranstalter').update({ name: newVeranstalterName }).eq('id', id);
+    if (error) alert('Fehler: ' + error.message);
+    else { setEditingVeranstalterId(null); setNewVeranstalterName(''); fetchCrmData(); }
+  };
 
+  const handleDeleteVeranstalter = async (id: string) => {
+    if (confirm('Achtung: Soll dieser Veranstalter und ALLE dazugehörigen Kontakte wirklich gelöscht werden?')) {
+      await supabase.from('veranstalter').delete().eq('id', id);
+      fetchCrmData();
+    }
+  };
+
+  const startEditKontakt = (kontakt: any) => {
+    setEditingKontaktId(kontakt.id);
+    setEditKontaktName(kontakt.name);
+    setEditKontaktKategorie(kontakt.kategorie || 'Allgemein');
+    setEditKontaktTelefon(kontakt.telefon || '');
+    setEditKontaktEmail(kontakt.email || '');
+  };
+
+  const handleUpdateKontakt = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editKontaktName.trim() || !editingKontaktId) return;
+    const { error } = await supabase.from('ansprechpartner').update({
+      name: editKontaktName, kategorie: editKontaktKategorie, telefon: editKontaktTelefon, email: editKontaktEmail
+    }).eq('id', editingKontaktId);
+    if (error) alert('Fehler: ' + error.message);
+    else { setEditingKontaktId(null); fetchCrmData(); }
+  };
   const fetchCrmData = async () => {
     const { data: vData } = await supabase.from('veranstalter').select('*').order('name');
     if (vData) setVeranstalter(vData);
@@ -1742,12 +1778,29 @@ export default function App() {
               <div className="space-y-4">
                 {veranstalter.filter(v => v.name.toLowerCase().includes(crmSearch.toLowerCase())).map(v => (
                   <div key={v.id} className="bg-gray-900/60 border border-gray-800 rounded-xl overflow-hidden shadow-sm">
-                    <div 
-                      className="p-4 flex justify-between items-center cursor-pointer hover:bg-gray-800/50 transition-colors"
-                      onClick={() => setExpandedVeranstalter(expandedVeranstalter === v.id ? null : v.id)}
-                    >
-                      <h3 className="text-lg font-bold text-gray-100">{v.name}</h3>
-                      <span className="text-gray-500">{expandedVeranstalter === v.id ? '▼' : '▶'}</span>
+                    <div className="p-4 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 hover:bg-gray-800/50 transition-colors border-b border-gray-800/50">
+                      {editingVeranstalterId === v.id ? (
+                        <form onSubmit={(e) => handleUpdateVeranstalter(e, v.id)} className="flex-1 flex gap-2">
+                          <input type="text" value={newVeranstalterName} onChange={(e) => setNewVeranstalterName(e.target.value)} className="flex-1 bg-gray-950 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-amber-500" autoFocus />
+                          <button type="submit" className="bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold">OK</button>
+                          <button type="button" onClick={() => setEditingVeranstalterId(null)} className="bg-gray-800 text-gray-300 px-3 py-1.5 rounded-lg text-sm font-bold">X</button>
+                        </form>
+                      ) : (
+                        <>
+                          <div className="flex-1 flex justify-between items-center cursor-pointer" onClick={() => setExpandedVeranstalter(expandedVeranstalter === v.id ? null : v.id)}>
+                            <h3 className="text-lg font-bold text-gray-100">{v.name}</h3>
+                            <span className="text-gray-500 sm:hidden">{expandedVeranstalter === v.id ? '▼' : '▶'}</span>
+                          </div>
+                          
+                          {myProfile?.is_admin && expandedVeranstalter === v.id && (
+                            <div className="flex gap-2 shrink-0">
+                              <button onClick={() => { setEditingVeranstalterId(v.id); setNewVeranstalterName(v.name); }} className="text-[12px] bg-gray-800 text-gray-300 px-2.5 py-1.5 rounded-lg hover:bg-gray-700 transition-colors">✏️ Edit</button>
+                              <button onClick={() => handleDeleteVeranstalter(v.id)} className="text-[12px] bg-red-500/10 text-red-400 px-2.5 py-1.5 rounded-lg hover:bg-red-500/20 transition-colors">🗑️ Löschen</button>
+                            </div>
+                          )}
+                          <span className="text-gray-500 hidden sm:block cursor-pointer" onClick={() => setExpandedVeranstalter(expandedVeranstalter === v.id ? null : v.id)}>{expandedVeranstalter === v.id ? '▼' : '▶'}</span>
+                        </>
+                      )}
                     </div>
 
                     {expandedVeranstalter === v.id && (
@@ -1787,29 +1840,49 @@ export default function App() {
                           </form>
                         )}
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+<div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           {ansprechpartner.filter(a => a.veranstalter_id === v.id).map(a => (
-                            <div key={a.id} className="bg-gray-900 border border-gray-800 p-3 rounded-lg flex flex-col gap-2 shadow-inner">
-                              <div className="flex justify-between items-start">
-                                <span className="font-bold text-white text-md">{a.name}</span>
-                                <span className="text-[10px] font-bold bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded uppercase border border-blue-500/30">{a.kategorie}</span>
-                              </div>
-                              <div className="flex flex-col gap-1 mt-1">
-                                {a.telefon && <a href={`tel:${a.telefon}`} className="text-sm text-gray-400 hover:text-amber-500 transition-colors">📞 {a.telefon}</a>}
-                                {a.email && <a href={`mailto:${a.email}`} className="text-sm text-gray-400 hover:text-amber-500 transition-colors">✉️ {a.email}</a>}
-                              </div>
-                              {myProfile?.is_admin && (
-                                <button 
-                                  onClick={async () => {
-                                    if(confirm('Möchtest du diesen Kontakt wirklich löschen?')) {
-                                      await supabase.from('ansprechpartner').delete().eq('id', a.id);
-                                      fetchCrmData();
-                                    }
-                                  }} 
-                                  className="text-[10px] text-red-500 self-end mt-2 opacity-50 hover:opacity-100 transition-opacity"
-                                >
-                                  Löschen
-                                </button>
+                            <div key={a.id} className="bg-gray-900 border border-gray-800 p-3 rounded-lg flex flex-col gap-2 shadow-inner min-h-[100px]">
+                              {editingKontaktId === a.id ? (
+                                <form onSubmit={handleUpdateKontakt} className="space-y-2 flex flex-col h-full justify-between">
+                                   <div>
+                                     <input type="text" value={editKontaktName} onChange={(e) => setEditKontaktName(e.target.value)} placeholder="Name" className="w-full bg-gray-950 border border-gray-700 rounded px-2 py-1 text-sm text-white focus:border-amber-500 mb-1" required />
+                                     <input type="text" value={editKontaktKategorie} onChange={(e) => setEditKontaktKategorie(e.target.value)} placeholder="Kategorie" className="w-full bg-gray-950 border border-gray-700 rounded px-2 py-1 text-sm text-white focus:border-amber-500 mb-1" required />
+                                     <input type="tel" value={editKontaktTelefon} onChange={(e) => setEditKontaktTelefon(e.target.value)} placeholder="Telefon" className="w-full bg-gray-950 border border-gray-700 rounded px-2 py-1 text-sm text-white focus:border-amber-500 mb-1" />
+                                     <input type="email" value={editKontaktEmail} onChange={(e) => setEditKontaktEmail(e.target.value)} placeholder="E-Mail" className="w-full bg-gray-950 border border-gray-700 rounded px-2 py-1 text-sm text-white focus:border-amber-500" />
+                                   </div>
+                                   <div className="flex gap-2 justify-end mt-2 pt-2 border-t border-gray-800/60">
+                                     <button type="button" onClick={() => setEditingKontaktId(null)} className="text-[12px] bg-gray-800 text-gray-300 px-3 py-1.5 rounded-lg hover:bg-gray-700">Abbrechen</button>
+                                     <button type="submit" className="text-[12px] bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg font-bold">Speichern</button>
+                                   </div>
+                                </form>
+                              ) : (
+                                <>
+                                  <div className="flex justify-between items-start">
+                                    <span className="font-bold text-white text-md">{a.name}</span>
+                                    <span className="text-[10px] font-bold bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded uppercase border border-blue-500/30">{a.kategorie}</span>
+                                  </div>
+                                  <div className="flex flex-col gap-1 mt-1 flex-1">
+                                    {a.telefon && <a href={`tel:${a.telefon}`} className="text-sm text-gray-400 hover:text-amber-500 transition-colors">📞 {a.telefon}</a>}
+                                    {a.email && <a href={`mailto:${a.email}`} className="text-sm text-gray-400 hover:text-amber-500 transition-colors">✉️ {a.email}</a>}
+                                  </div>
+                                  {myProfile?.is_admin && (
+                                    <div className="flex gap-2 justify-end mt-2 pt-2 border-t border-gray-800/60 shrink-0">
+                                      <button onClick={() => startEditKontakt(a)} className="text-[10px] bg-gray-800 text-gray-300 px-2 py-1 rounded hover:bg-gray-700 transition-colors">✏️ Edit</button>
+                                      <button 
+                                        onClick={async () => {
+                                          if(confirm('Möchtest du diesen Kontakt wirklich löschen?')) {
+                                            await supabase.from('ansprechpartner').delete().eq('id', a.id);
+                                            fetchCrmData();
+                                          }
+                                        }} 
+                                        className="text-[10px] bg-red-500/10 text-red-400 px-2 py-1 rounded hover:bg-red-500/20 transition-colors"
+                                      >
+                                        🗑️ Löschen
+                                      </button>
+                                    </div>
+                                  )}
+                                </>
                               )}
                             </div>
                           ))}
