@@ -132,8 +132,9 @@ export default function App() {
   const [songKey, setSongKey] = useState(''); 
   const [songLyrics, setSongLyrics] = useState('');
   const [songTabLink, setSongTabLink] = useState('');
+  const [songCover, setSongCover] = useState('');
   const [isFetchingSongData, setIsFetchingSongData] = useState(false);
-
+  const [tapTimes, setTapTimes] = useState<number[]>([]);
   const autoFillSongData = async () => {
     if (!songTitle.trim() || !songArtist.trim()) {
       return alert('Bitte gib zuerst einen Titel UND einen Interpreten ein, damit die Suche funktioniert!');
@@ -172,6 +173,11 @@ export default function App() {
         const minutes = Math.floor(totalSeconds / 60);
         const seconds = totalSeconds % 60;
         setSongDuration(`${minutes < 10 ? '0' : ''}${minutes}:${seconds < 10 ? '0' : ''}${seconds}`);
+        
+        // NEU: Das Album-Cover von Spotify abgreifen!
+        if (track.album && track.album.images.length > 0) {
+          setSongCover(track.album.images[0].url);
+        }
       }
 
       // 3. Songtext über LRCLIB holen (Die stabilere Profi-Datenbank!)
@@ -193,6 +199,27 @@ export default function App() {
     }
     
     setIsFetchingSongData(false);
+  };
+  const handleTapTempo = () => {
+    const now = Date.now();
+    // Behalte nur Klicks, die nicht länger als 3 Sekunden her sind (sonst fängt er bei Pausen falsch an zu rechnen)
+    const newTaps = [...tapTimes, now].filter(t => now - t < 3000);
+    setTapTimes(newTaps);
+
+    if (newTaps.length >= 2) {
+      // Berechne die Abstände zwischen den Klicks
+      const intervals = [];
+      for (let i = 1; i < newTaps.length; i++) {
+        intervals.push(newTaps[i] - newTaps[i - 1]);
+      }
+      
+      // Durchschnittlichen Abstand nehmen und in BPM umrechnen (60.000 Millisekunden = 1 Minute)
+      const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+      const calculatedBpm = Math.round(60000 / avgInterval);
+      
+      // Das Ergebnis direkt in das BPM-Feld schreiben
+      setSongBpm(calculatedBpm.toString());
+    }
   };
   const [fundBalance, setFundBalance] = useState<number>(0);
   const [transactions, setTransactions] = useState<any[]>([]);
@@ -623,7 +650,8 @@ export default function App() {
       bpm: songBpm,
       tonart: songKey,
       lyrics: songLyrics,
-      tab_link: songTabLink
+      tab_link: songTabLink,
+      cover_url: songCover
     };
 
     if (editingSongId) {
@@ -649,6 +677,7 @@ export default function App() {
 
   const startEditSong = (s: any) => {
     setEditingSongId(s.id); 
+    setSongCover(s.cover_url || '');
     setSongTitle(s.title); 
     setSongArtist(s.artist || ''); 
     setSongDuration(s.duration || '');
@@ -663,6 +692,7 @@ export default function App() {
 
   const resetSongForm = () => {
     setEditingSongId(null); 
+    setSongCover('');
     setSongTitle(''); 
     setSongArtist(''); 
     setSongDuration(''); 
@@ -1516,10 +1546,15 @@ export default function App() {
           {selectedSong && !planningSetlistEvent && !planningSetlistTemplate && (
             <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
               <div className="bg-gray-900 border border-gray-800 w-full max-w-2xl max-h-[90dvh] max-w-[95vw] rounded-2xl p-6 shadow-2xl flex flex-col overflow-hidden">
-                <div className="flex justify-between items-start border-b border-gray-800 pb-3 mb-4 shrink-0">
-                  <div>
-                    <h3 className="text-lg font-black text-white">{selectedSong.title}</h3>
-                    <p className="text-sm text-amber-500 font-semibold">{selectedSong.artist || 'Unbekannter Interpret'}</p>
+              <div className="flex justify-between items-start border-b border-gray-800 pb-3 mb-4 shrink-0">
+                  <div className="flex gap-4 items-center">
+                    {selectedSong.cover_url && (
+                      <img src={selectedSong.cover_url} alt="Cover" className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl shadow-lg object-cover" />
+                    )}
+                    <div>
+                      <h3 className="text-lg sm:text-xl font-black text-white">{selectedSong.title}</h3>
+                      <p className="text-sm text-amber-500 font-semibold">{selectedSong.artist || 'Unbekannter Interpret'}</p>
+                    </div>
                   </div>
                   <button onClick={() => setSelectedSong(null)} className="p-1 bg-gray-950 border border-gray-800 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white transition-colors text-sm font-bold px-3 py-1.5 shrink-0">Schließen</button>
                 </div>
@@ -1757,7 +1792,12 @@ export default function App() {
                     </div>
                     <div>
                       <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">BPM</label>
-                      <input type="text" value={songBpm} onChange={(e) => setSongBpm(e.target.value)} placeholder="z.B. 120" className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500 font-mono" />
+                      <div className="flex gap-2">
+                        <input type="text" value={songBpm} onChange={(e) => setSongBpm(e.target.value)} placeholder="120" className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500 font-mono" />
+                        <button type="button" onClick={handleTapTempo} className="bg-amber-500/10 text-amber-500 border border-amber-500/30 hover:bg-amber-500/20 px-3 py-2 rounded-xl font-bold transition-colors shrink-0 shadow-sm active:scale-95" title="Klicke hier mehrmals im Takt">
+                          👆 Tap
+                        </button>
+                      </div>
                     </div>
                     <div className="sm:col-span-2">
                       <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Tonart</label>
@@ -1789,16 +1829,23 @@ export default function App() {
                 ) : (
                   filteredSongs.map(song => (
                     <div key={song.id} className="bg-gray-900/40 border border-gray-800 hover:border-gray-700 p-4 rounded-xl transition-all shadow-sm flex flex-col justify-between group">
-                      <div onClick={() => setSelectedSong(song)} className="cursor-pointer">
-                        <div className="flex justify-between items-start">
-                          <h3 className="text-[16px] font-bold text-gray-100 group-hover:text-amber-400 transition-colors">{song.title}</h3>
-                          <div className="flex gap-1 text-[10px] font-bold flex-wrap justify-end">
-                            {song.duration && <span className="bg-gray-800 text-gray-300 px-1.5 py-0.5 rounded font-mono">⏱ {song.duration}</span>}
-                            {song.bpm && <span className="bg-blue-500/10 text-blue-400 border border-blue-500/20 px-1.5 py-0.5 rounded font-mono">{song.bpm} BPM</span>}
-                            {song.tonart && <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-1.5 py-0.5 rounded">{song.tonart}</span>}
+                      <div onClick={() => setSelectedSong(song)} className="cursor-pointer flex gap-3">
+                        {song.cover_url ? (
+                          <img src={song.cover_url} alt="Cover" className="w-12 h-12 rounded-lg object-cover shadow-sm shrink-0" />
+                        ) : (
+                          <div className="w-12 h-12 rounded-lg bg-gray-800 flex items-center justify-center text-xl shrink-0">🎵</div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex justify-between items-start">
+                            <h3 className="text-[16px] font-bold text-gray-100 group-hover:text-amber-400 transition-colors truncate">{song.title}</h3>
+                            <div className="flex gap-1 text-[10px] font-bold flex-wrap justify-end shrink-0 pl-2">
+                              {song.duration && <span className="bg-gray-800 text-gray-300 px-1.5 py-0.5 rounded font-mono">⏱ {song.duration}</span>}
+                              {song.bpm && <span className="bg-blue-500/10 text-blue-400 border border-blue-500/20 px-1.5 py-0.5 rounded font-mono">{song.bpm} BPM</span>}
+                              {song.tonart && <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-1.5 py-0.5 rounded">{song.tonart}</span>}
+                            </div>
                           </div>
+                          <p className="text-sm text-gray-400 mt-0.5">{song.artist || 'Unbekannter Interpret'}</p>
                         </div>
-                        <p className="text-sm text-gray-400 mt-0.5">{song.artist || 'Unbekannter Interpret'}</p>
                       </div>
                       
                       {(myProfile.can_manage_events || myProfile.is_admin) && (
