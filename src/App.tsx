@@ -17,6 +17,35 @@ export default function App() {
   const [ansprechpartner, setAnsprechpartner] = useState<any[]>([]);
   const [crmSearch, setCrmSearch] = useState('');
   const [expandedVeranstalter, setExpandedVeranstalter] = useState<string | null>(null);
+  const [isAddingVeranstalter, setIsAddingVeranstalter] = useState(false);
+  const [newVeranstalterName, setNewVeranstalterName] = useState('');
+  
+  const [addingKontaktFor, setAddingKontaktFor] = useState<string | null>(null);
+  const [newKontaktName, setNewKontaktName] = useState('');
+  const [newKontaktKategorie, setNewKontaktKategorie] = useState('Allgemein');
+  const [newKontaktTelefon, setNewKontaktTelefon] = useState('');
+  const [newKontaktEmail, setNewKontaktEmail] = useState('');
+
+  const handleSaveVeranstalter = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newVeranstalterName.trim()) return;
+    const { error } = await supabase.from('veranstalter').insert([{ name: newVeranstalterName }]);
+    if (error) alert('Fehler: ' + error.message);
+    else { setNewVeranstalterName(''); setIsAddingVeranstalter(false); fetchCrmData(); }
+  };
+
+  const handleSaveKontakt = async (e: React.FormEvent, vId: string) => {
+    e.preventDefault();
+    if (!newKontaktName.trim()) return;
+    const { error } = await supabase.from('ansprechpartner').insert([{
+      veranstalter_id: vId, name: newKontaktName, kategorie: newKontaktKategorie, telefon: newKontaktTelefon, email: newKontaktEmail
+    }]);
+    if (error) alert('Fehler: ' + error.message);
+    else {
+      setNewKontaktName(''); setNewKontaktKategorie('Allgemein'); setNewKontaktTelefon(''); setNewKontaktEmail('');
+      setAddingKontaktFor(null); fetchCrmData();
+    }
+  };
 
   const fetchCrmData = async () => {
     const { data: vData } = await supabase.from('veranstalter').select('*').order('name');
@@ -1152,7 +1181,10 @@ export default function App() {
   
   const displayEvents = showPastEvents ? typeFilteredEvents : upcomingEventsList;
   const groupedDisplayEvents = getGroupedEventsByMonth(displayEvents);
-  const myPendingEvents = upcomingEventsList.filter(ev => !responses.some(r => r.event_id === ev.id && r.user_id === session?.user?.id));
+  const myPendingEvents = upcomingEventsList.filter(ev => {
+    if (ev.event_type === 'Probe' && myProfile?.full_name?.toLowerCase().includes('jonas')) return false;
+    return !responses.some(r => r.event_id === ev.id && r.user_id === session?.user?.id);
+  });
   const activeMembersCount = allProfiles.filter(p => p.is_approved || p.is_admin).length;
   
   const filteredSongs = songs.filter(s => 
@@ -1677,21 +1709,27 @@ export default function App() {
           {/* VIEW: CRM / KONTAKTE */}
           {currentView === 'kontakte' && (
             <div className="space-y-6">
-              <div className="flex justify-between items-center">
+              <div className="flex justify-between items-center flex-wrap gap-3">
                 <h2 className="text-2xl font-black text-white">Veranstalter & Kontakte</h2>
                 <button 
-                  onClick={async () => {
-                    const name = prompt('Name des Veranstalters (z.B. Stadtfest Köln):');
-                    if (name) {
-                      await supabase.from('veranstalter').insert([{ name }]);
-                      fetchCrmData();
-                    }
-                  }} 
-                  className="bg-amber-500 text-gray-950 px-4 py-2 rounded-xl font-bold hover:bg-amber-400 transition-colors"
+                  onClick={() => setIsAddingVeranstalter(!isAddingVeranstalter)} 
+                  className="bg-amber-500 hover:bg-amber-600 text-gray-950 px-4 py-2 rounded-xl font-bold transition-colors active:scale-95"
                 >
-                  + Veranstalter
+                  {isAddingVeranstalter ? 'Schließen' : '+ Veranstalter'}
                 </button>
               </div>
+
+              {/* Veranstalter Form */}
+              {isAddingVeranstalter && (
+                <form onSubmit={handleSaveVeranstalter} className="bg-gray-900/90 border border-amber-500/20 p-5 rounded-2xl space-y-4 shadow-lg">
+                  <h3 className="font-bold text-amber-500 text-sm uppercase mb-2">🏢 Neuen Veranstalter anlegen</h3>
+                  <div>
+                    <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Name des Veranstalters</label>
+                    <input type="text" value={newVeranstalterName} onChange={(e) => setNewVeranstalterName(e.target.value)} placeholder="z.B. Stadtfest Köln" className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500" required />
+                  </div>
+                  <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[16px] rounded-xl py-2.5 transition-colors">Speichern</button>
+                </form>
+              )}
 
               <input 
                 type="text" 
@@ -1714,22 +1752,40 @@ export default function App() {
 
                     {expandedVeranstalter === v.id && (
                       <div className="p-4 border-t border-gray-800 bg-gray-950/50">
+                        
                         <div className="flex justify-end mb-4">
                           <button 
-                            onClick={async () => {
-                              const name = prompt('Name des Ansprechpartners:');
-                              if (!name) return;
-                              const kategorie = prompt('Kategorie (z.B. Booking, Technik, Catering, Presse):') || 'Allgemein';
-                              const telefon = prompt('Telefonnummer (optional):');
-                              const email = prompt('E-Mail (optional):');
-                              await supabase.from('ansprechpartner').insert([{ veranstalter_id: v.id, name, kategorie, telefon, email }]);
-                              fetchCrmData();
-                            }} 
+                            onClick={() => setAddingKontaktFor(addingKontaktFor === v.id ? null : v.id)} 
                             className="text-[12px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-3 py-1.5 rounded-lg font-bold hover:bg-emerald-500/20 transition-colors"
                           >
-                            + Kontakt hinzufügen
+                            {addingKontaktFor === v.id ? 'Abbrechen' : '+ Kontakt hinzufügen'}
                           </button>
                         </div>
+
+                        {addingKontaktFor === v.id && (
+                          <form onSubmit={(e) => handleSaveKontakt(e, v.id)} className="bg-gray-900/90 border border-emerald-500/20 p-4 rounded-xl space-y-4 mb-4 shadow-lg">
+                             <h4 className="font-bold text-emerald-500 text-sm uppercase">👤 Neuen Kontakt eintragen</h4>
+                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                               <div>
+                                 <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Name</label>
+                                 <input type="text" value={newKontaktName} onChange={(e) => setNewKontaktName(e.target.value)} placeholder="Max Mustermann" className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[14px] text-white focus:outline-none focus:border-emerald-500" required />
+                               </div>
+                               <div>
+                                 <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Kategorie / Rolle</label>
+                                 <input type="text" value={newKontaktKategorie} onChange={(e) => setNewKontaktKategorie(e.target.value)} placeholder="z.B. Booking, Technik..." className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[14px] text-white focus:outline-none focus:border-emerald-500" required />
+                               </div>
+                               <div>
+                                 <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Telefon</label>
+                                 <input type="tel" value={newKontaktTelefon} onChange={(e) => setNewKontaktTelefon(e.target.value)} placeholder="+49..." className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[14px] text-white focus:outline-none focus:border-emerald-500" />
+                               </div>
+                               <div>
+                                 <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">E-Mail</label>
+                                 <input type="email" value={newKontaktEmail} onChange={(e) => setNewKontaktEmail(e.target.value)} placeholder="mail@..." className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[14px] text-white focus:outline-none focus:border-emerald-500" />
+                               </div>
+                             </div>
+                             <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm rounded-xl py-2.5 transition-colors">Kontakt speichern</button>
+                          </form>
+                        )}
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           {ansprechpartner.filter(a => a.veranstalter_id === v.id).map(a => (
@@ -1987,9 +2043,16 @@ export default function App() {
                         {groupedDisplayEvents[monthYearKey].map(ev => {
                           const { dayNum, dayName, monthName } = getParsedDate(ev.event_date);
                           const eventVotes = responses.filter(r => r.event_id === ev.id);
-                          const goingUsers = allProfiles.filter(p => eventVotes.some(v => v.user_id === p.id && v.status === 'ja'));
-                          const decliningUsers = allProfiles.filter(p => eventVotes.some(v => v.user_id === p.id && v.status === 'nein'));
-                          const pendingUsers = allProfiles.filter(p => p.is_approved && !eventVotes.some(v => v.user_id === p.id));
+                          
+                          // Jonas wird bei Proben komplett ignoriert
+                          const relevantProfiles = allProfiles.filter(p => {
+                            if (ev.event_type === 'Probe' && p.full_name?.toLowerCase().includes('jonas')) return false;
+                            return true;
+                          });
+
+                          const goingUsers = relevantProfiles.filter(p => eventVotes.some(v => v.user_id === p.id && v.status === 'ja'));
+                          const decliningUsers = relevantProfiles.filter(p => eventVotes.some(v => v.user_id === p.id && v.status === 'nein'));
+                          const pendingUsers = relevantProfiles.filter(p => p.is_approved && !eventVotes.some(v => v.user_id === p.id));
                           const myVote = eventVotes.find(v => v.user_id === session.user.id)?.status;
                           const isExpanded = expandedEventId === ev.id;
                           const isAllGoing = goingUsers.length === activeMembersCount && activeMembersCount > 0;
