@@ -132,7 +132,68 @@ export default function App() {
   const [songKey, setSongKey] = useState(''); 
   const [songLyrics, setSongLyrics] = useState('');
   const [songTabLink, setSongTabLink] = useState('');
+  const [isFetchingSongData, setIsFetchingSongData] = useState(false);
 
+  const autoFillSongData = async () => {
+    if (!songTitle.trim() || !songArtist.trim()) {
+      return alert('Bitte gib zuerst einen Titel UND einen Interpreten ein, damit die Suche funktioniert!');
+    }
+    
+    setIsFetchingSongData(true);
+    
+    // Wir setzen BPM und Tonart bewusst zurück, damit kein altes "NaN" stehen bleibt
+    setSongBpm('');
+    setSongKey('');
+
+    try {
+      // 1. Spotify Token holen (für die Dauer)
+      const clientId = '7b33a0f8a3244958bcba885902b66059';
+      const clientSecret = '5548ad7065f543eb8667e0c60c5cd82f';
+      const authResponse = await fetch('https://accounts.spotify.com/api/token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Authorization': 'Basic ' + btoa(clientId + ':' + clientSecret)
+        },
+        body: 'grant_type=client_credentials'
+      });
+      const authData = await authResponse.json();
+      const token = authData.access_token;
+
+      // 2. Song bei Spotify suchen
+      const searchResponse = await fetch(`https://api.spotify.com/v1/search?q=track:${encodeURIComponent(songTitle)}%20artist:${encodeURIComponent(songArtist)}&type=track&limit=1`, {
+        headers: { 'Authorization': 'Bearer ' + token }
+      });
+      const searchData = await searchResponse.json();
+
+      if (searchData.tracks && searchData.tracks.items.length > 0) {
+        const track = searchData.tracks.items[0];
+        const totalSeconds = Math.floor(track.duration_ms / 1000);
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+        setSongDuration(`${minutes < 10 ? '0' : ''}${minutes}:${seconds < 10 ? '0' : ''}${seconds}`);
+      }
+
+      // 3. Songtext über LRCLIB holen (Die stabilere Profi-Datenbank!)
+      try {
+        const lyricsResponse = await fetch(`https://lrclib.net/api/search?track_name=${encodeURIComponent(songTitle)}&artist_name=${encodeURIComponent(songArtist)}`);
+        const lyricsData = await lyricsResponse.json();
+        
+        if (lyricsData && lyricsData.length > 0 && lyricsData[0].plainLyrics) {
+          setSongLyrics(lyricsData[0].plainLyrics);
+        } else {
+          console.log('LRCLIB hat für diesen speziellen Song keinen Text gefunden.');
+        }
+      } catch (lyricErr) {
+        console.log('Fehler beim Songtext-Abruf:', lyricErr);
+      }
+
+    } catch (error: any) {
+      alert('Fehler bei der API-Abfrage: ' + error.message);
+    }
+    
+    setIsFetchingSongData(false);
+  };
   const [fundBalance, setFundBalance] = useState<number>(0);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [transAmount, setTransAmount] = useState('');
@@ -1256,7 +1317,7 @@ export default function App() {
 
   if (session && myProfile) {
     return (
-      <div className="min-h-[100dvh] w-full bg-gray-950 text-gray-100 font-sans relative overflow-x-hidden selection:bg-amber-500 selection:text-black m-0 p-0">
+      <div className="h-[100dvh] w-full bg-gray-950 text-gray-100 font-sans relative overflow-x-hidden overflow-y-auto selection:bg-amber-500 selection:text-black m-0 p-0">
         
         {/* --- LIVE BÜHNEN-MODUS OVERLAY --- */}
         {isLiveMode && selectedSong && (
@@ -1670,7 +1731,17 @@ export default function App() {
 
               {isAddingSong && (
                 <form onSubmit={handleAddSong} className="bg-gray-900/90 border border-amber-500/20 p-5 rounded-2xl space-y-4 shadow-lg">
-                  <h3 className="font-bold text-amber-500 text-sm uppercase mb-2">{editingSongId ? '✏️ Song bearbeiten' : '➕ Neuen Song anlegen'}</h3>
+                  <div className="flex justify-between items-center mb-2 flex-wrap gap-2">
+                    <h3 className="font-bold text-amber-500 text-sm uppercase">{editingSongId ? '✏️ Song bearbeiten' : '➕ Neuen Song anlegen'}</h3>
+                    <button 
+                      type="button" 
+                      onClick={autoFillSongData}
+                      disabled={isFetchingSongData}
+                      className="bg-[#1DB954]/20 border border-[#1DB954]/50 text-[#1DB954] hover:bg-[#1DB954]/30 px-3 py-1.5 rounded-lg text-[12px] font-bold transition-all disabled:opacity-50 flex items-center gap-2"
+                    >
+                      {isFetchingSongData ? '⏳ Suche läuft...' : '✨ Spotify Autofill'}
+                    </button>
+                  </div>
                   <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                     <div className="sm:col-span-2">
                       <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Songtitel</label>
