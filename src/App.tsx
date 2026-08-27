@@ -203,6 +203,62 @@ export default function App() {
     
     setIsFetchingSongData(false);
   };
+  const bulkUpdateAllSongs = async () => {
+    if (!confirm('Sollen jetzt alle Songs im Hintergrund aktualisiert werden? Das dauert einen Moment...')) return;
+    setIsFetchingSongData(true);
+
+    try {
+      // 1. Spotify Token (einmalig für den ganzen Durchlauf holen)
+      const authResponse = await fetch('https://accounts.spotify.com/api/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Authorization': 'Basic ' + btoa('7b33a0f8a3244958bcba885902b66059:5548ad7065f543eb8667e0c60c5cd82f') },
+        body: 'grant_type=client_credentials'
+      });
+      const authData = await authResponse.json();
+      const token = authData.access_token;
+
+      // 2. Jeden Song durchgehen
+      for (const s of songs) {
+        if (!s.title || !s.artist) continue;
+
+        let updatedCover = s.cover_url;
+        let updatedLyrics = s.lyrics;
+        let updatedDuration = s.duration;
+
+        // Spotify Abfrage
+        const searchRes = await fetch(`https://api.spotify.com/v1/search?q=track:${encodeURIComponent(s.title)}%20artist:${encodeURIComponent(s.artist)}&type=track&limit=1`, { headers: { 'Authorization': 'Bearer ' + token } });
+        const searchData = await searchRes.json();
+        
+        if (searchData.tracks && searchData.tracks.items.length > 0) {
+          const track = searchData.tracks.items[0];
+          const totalSecs = Math.floor(track.duration_ms / 1000);
+          const mins = Math.floor(totalSecs / 60);
+          const secs = totalSecs % 60;
+          updatedDuration = `${mins < 10 ? '0' : ''}${mins}:${secs < 10 ? '0' : ''}${secs}`;
+          if (track.album && track.album.images.length > 0 && !s.cover_url) updatedCover = track.album.images[0].url;
+        }
+
+        // LRCLIB Abfrage
+        try {
+          const lyricRes = await fetch(`https://lrclib.net/api/search?track_name=${encodeURIComponent(s.title)}&artist_name=${encodeURIComponent(s.artist)}`);
+          const lyricData = await lyricRes.json();
+          if (lyricData && lyricData.length > 0 && lyricData[0].plainLyrics) updatedLyrics = lyricData[0].plainLyrics;
+        } catch (e) {}
+
+        // In Supabase speichern
+        await supabase.from('songs').update({ duration: updatedDuration, cover_url: updatedCover, lyrics: updatedLyrics }).eq('id', s.id);
+
+        // 800 Millisekunden Pause, damit Spotify uns nicht wegen Spam blockiert!
+        await new Promise(resolve => setTimeout(resolve, 800));
+      }
+      
+      alert('✅ Alle Songs erfolgreich aktualisiert!');
+      fetchSongs();
+    } catch (error: any) {
+      alert('Fehler beim Massen-Update: ' + error.message);
+    }
+    setIsFetchingSongData(false);
+  };
   const handleTapTempo = () => {
     const now = Date.now();
     // Behalte nur Klicks, die nicht länger als 3 Sekunden her sind (sonst fängt er bei Pausen falsch an zu rechnen)
@@ -1770,13 +1826,24 @@ export default function App() {
             </div>
           )}
 
-          {currentView === 'songs' && !planningSetlistEvent && !planningSetlistTemplate && (
+{currentView === 'songs' && !planningSetlistEvent && !planningSetlistTemplate && (
             <div className="space-y-6">
               <div className="flex justify-between items-center flex-wrap gap-3">
                 <h2 className="text-lg font-bold text-gray-300">🎵 Song-Repertoire ({songs.length})</h2>
-                <button onClick={() => { if(isAddingSong) resetSongForm(); else setIsAddingSong(true); }} className="bg-amber-500 hover:bg-amber-600 text-gray-950 text-sm font-bold px-3 py-2 rounded-xl transition-transform active:scale-95">
-                  {isAddingSong ? 'Schließen' : '+ Song hinzufügen'}
-                </button>
+                <div className="flex gap-2">
+                  {(myProfile?.is_admin || myProfile?.can_mass_update) && (
+                    <button 
+                      onClick={bulkUpdateAllSongs} 
+                      disabled={isFetchingSongData}
+                      className="bg-purple-500/10 border border-purple-500/30 text-purple-400 hover:bg-purple-500/20 text-sm font-bold px-3 py-2 rounded-xl transition-colors disabled:opacity-50"
+                    >
+                      {isFetchingSongData ? '⏳ Aktualisiere...' : '✨ Alle Songs updaten'}
+                    </button>
+                  )}
+                  <button onClick={() => { if(isAddingSong) resetSongForm(); else setIsAddingSong(true); }} className="bg-amber-500 hover:bg-amber-600 text-gray-950 text-sm font-bold px-3 py-2 rounded-xl transition-transform active:scale-95">
+                    {isAddingSong ? 'Schließen' : '+ Song hinzufügen'}
+                  </button>
+                </div>
               </div>
 
               {isAddingSong && (
@@ -2656,6 +2723,18 @@ export default function App() {
                                 className="rounded bg-gray-900 border-gray-700 text-amber-500"
                               />
                               📇 CRM-Zugriff
+                            </label>
+                            <label className="flex items-center gap-2 mt-1 text-[12px] text-gray-300 cursor-pointer">
+                              <input 
+                                type="checkbox" 
+                                checked={p.can_mass_update || false}
+                                onChange={async (e) => {
+                                  await supabase.from('profiles').update({ can_mass_update: e.target.checked }).eq('id', p.id);
+                                  fetchAllProfiles();
+                                }}
+                                className="rounded bg-gray-900 border-gray-700 text-amber-500"
+                              />
+                              ✨ Massen-Update
                             </label>
                           </td>
                           <td className="py-4 text-right">
