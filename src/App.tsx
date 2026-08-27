@@ -133,6 +133,8 @@ export default function App() {
   const [songLyrics, setSongLyrics] = useState('');
   const [songTabLink, setSongTabLink] = useState('');
   const [songCover, setSongCover] = useState('');
+  const [songStatus, setSongStatus] = useState('Vorschläge');
+  const [songFilter, setSongFilter] = useState('Alle');
   const [isFetchingSongData, setIsFetchingSongData] = useState(false);
   const [tapTimes, setTapTimes] = useState<number[]>([]);
   const autoFillSongData = async () => {
@@ -220,6 +222,17 @@ export default function App() {
       // Das Ergebnis direkt in das BPM-Feld schreiben
       setSongBpm(calculatedBpm.toString());
     }
+  };
+  const toggleSongStatus = async (songId: string, currentStatus: string) => {
+    // Bestimme den nächsten Status
+    const nextStatus = currentStatus === 'Vorschläge' ? 'am Proben' : currentStatus === 'am Proben' ? 'Fertig' : 'Vorschläge';
+    
+    // UI sofort updaten, damit es sich blitzschnell anfühlt
+    setSongs(songs.map(s => s.id === songId ? { ...s, status: nextStatus } : s));
+    if (selectedSong && selectedSong.id === songId) setSelectedSong({ ...selectedSong, status: nextStatus });
+
+    // Datenbank im Hintergrund speichern
+    await supabase.from('songs').update({ status: nextStatus }).eq('id', songId);
   };
   const [fundBalance, setFundBalance] = useState<number>(0);
   const [transactions, setTransactions] = useState<any[]>([]);
@@ -651,7 +664,8 @@ export default function App() {
       tonart: songKey,
       lyrics: songLyrics,
       tab_link: songTabLink,
-      cover_url: songCover
+      cover_url: songCover,
+      status: songStatus
     };
 
     if (editingSongId) {
@@ -1799,6 +1813,7 @@ export default function App() {
                         </button>
                       </div>
                     </div>
+                    
                     <div className="sm:col-span-2">
                       <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Tonart</label>
                       <input type="text" value={songKey} onChange={(e) => setSongKey(e.target.value)} placeholder="z.B. C-Dur / Am" className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500" />
@@ -1819,15 +1834,25 @@ export default function App() {
                 </form>
               )}
 
-              <div className="relative">
+<div className="relative mb-6">
                 <input type="text" value={songSearchQuery} onChange={(e) => setSongSearchQuery(e.target.value)} placeholder="🔍 Nach Songtitel oder Interpret suchen..." className="w-full bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 text-[16px] text-white focus:outline-none focus:border-amber-500 shadow-sm" />
               </div>
 
+              {/* SCHLICHTE SLIDER-NAVIGATION WIE BEI DEN TERMINEN */}
+              <div className="relative bg-gray-900/80 p-1 rounded-xl flex border border-gray-800/60 max-w-xl mb-6">
+                <div className="absolute top-1 bottom-1 bg-gray-800 border border-gray-700/50 rounded-lg shadow transition-all duration-300" style={{ left: songFilter === 'Alle' ? '4px' : songFilter === 'Vorschläge' ? '25%' : songFilter === 'am Proben' ? '50%' : '75%', width: 'calc(25% - 6px)' }} />
+                <button onClick={() => setSongFilter('Alle')} className={`relative z-10 w-1/4 py-1.5 text-sm font-bold transition-colors text-center ${songFilter === 'Alle' ? 'text-white' : 'text-gray-400'}`}>Alle</button>
+                <button onClick={() => setSongFilter('Vorschläge')} className={`relative z-10 w-1/4 py-1.5 text-sm font-bold transition-colors text-center ${songFilter === 'Vorschläge' ? 'text-white' : 'text-gray-400'}`}>Vorschläge</button>
+                <button onClick={() => setSongFilter('am Proben')} className={`relative z-10 w-1/4 py-1.5 text-sm font-bold transition-colors text-center ${songFilter === 'am Proben' ? 'text-white' : 'text-gray-400'}`}>Am Proben</button>
+                <button onClick={() => setSongFilter('Fertig')} className={`relative z-10 w-1/4 py-1.5 text-sm font-bold transition-colors text-center ${songFilter === 'Fertig' ? 'text-white' : 'text-gray-400'}`}>Fertig</button>
+              </div>
+                
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {filteredSongs.length === 0 ? (
-                  <p className="text-sm text-gray-500 italic col-span-2">Keine Songs gefunden.</p>
+                {filteredSongs.filter(s => songFilter === 'Alle' || (s.status || 'Vorschläge') === songFilter).length === 0 ? (
+                  <p className="text-sm text-gray-500 italic col-span-2 bg-gray-900/50 border border-dashed border-gray-800 p-6 rounded-xl text-center">In dieser Kategorie gibt es noch keine Songs.</p>
                 ) : (
-                  filteredSongs.map(song => (
+                  
+                  filteredSongs.filter(s => songFilter === 'Alle' || (s.status || 'Vorschläge') === songFilter).map(song => (
                     <div key={song.id} className="bg-gray-900/40 border border-gray-800 hover:border-gray-700 p-4 rounded-xl transition-all shadow-sm flex flex-col justify-between group">
                       <div onClick={() => setSelectedSong(song)} className="cursor-pointer flex gap-3">
                         {song.cover_url ? (
@@ -1839,9 +1864,18 @@ export default function App() {
                           <div className="flex justify-between items-start">
                             <h3 className="text-[16px] font-bold text-gray-100 group-hover:text-amber-400 transition-colors truncate">{song.title}</h3>
                             <div className="flex gap-1 text-[10px] font-bold flex-wrap justify-end shrink-0 pl-2">
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); toggleSongStatus(song.id, song.status || 'Vorschläge'); }} 
+                                className="hover:scale-105 transition-transform cursor-pointer"
+                                title="Klicken, um den Status zu ändern"
+                              >
+                                {(!song.status || song.status === 'Vorschläge') && <span className="bg-gray-800 text-gray-300 border border-gray-700 px-1.5 py-0.5 rounded block">💡 Vorschlag</span>}
+                                {song.status === 'am Proben' && <span className="bg-amber-500/10 text-amber-400 border border-amber-500/20 px-1.5 py-0.5 rounded block">🚧 Proben</span>}
+                                {song.status === 'Fertig' && <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-1.5 py-0.5 rounded block">✅ Fertig</span>}
+                              </button>
+                              
                               {song.duration && <span className="bg-gray-800 text-gray-300 px-1.5 py-0.5 rounded font-mono">⏱ {song.duration}</span>}
                               {song.bpm && <span className="bg-blue-500/10 text-blue-400 border border-blue-500/20 px-1.5 py-0.5 rounded font-mono">{song.bpm} BPM</span>}
-                              {song.tonart && <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-1.5 py-0.5 rounded">{song.tonart}</span>}
                             </div>
                           </div>
                           <p className="text-sm text-gray-400 mt-0.5">{song.artist || 'Unbekannter Interpret'}</p>
@@ -1938,6 +1972,7 @@ export default function App() {
                              <h4 className="font-bold text-emerald-500 text-sm uppercase">👤 Neuen Kontakt eintragen</h4>
                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                <div>
+                                
                                  <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Name</label>
                                  <input type="text" value={newKontaktName} onChange={(e) => setNewKontaktName(e.target.value)} placeholder="Max Mustermann" className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[14px] text-white focus:outline-none focus:border-emerald-500" required />
                                </div>
