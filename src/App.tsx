@@ -143,10 +143,6 @@ export default function App() {
     }
     
     setIsFetchingSongData(true);
-    
-    // Wir setzen BPM und Tonart bewusst zurück, damit kein altes "NaN" stehen bleibt
-    setSongBpm('');
-    setSongKey('');
 
     try {
       // 1. Spotify Token holen (für die Dauer)
@@ -174,20 +170,25 @@ export default function App() {
         const totalSeconds = Math.floor(track.duration_ms / 1000);
         const minutes = Math.floor(totalSeconds / 60);
         const seconds = totalSeconds % 60;
+        
+        // Dauer immer überschreiben
         setSongDuration(`${minutes < 10 ? '0' : ''}${minutes}:${seconds < 10 ? '0' : ''}${seconds}`);
         
-        // NEU: Das Album-Cover von Spotify abgreifen!
+        // Das Album-Cover NUR hinzufügen, wenn noch keins existiert!
         if (track.album && track.album.images.length > 0) {
-          setSongCover(track.album.images[0].url);
+          if (!songCover) {
+            setSongCover(track.album.images[0].url);
+          }
         }
       }
 
-      // 3. Songtext über LRCLIB holen (Die stabilere Profi-Datenbank!)
+      // 3. Songtext über LRCLIB holen
       try {
         const lyricsResponse = await fetch(`https://lrclib.net/api/search?track_name=${encodeURIComponent(songTitle)}&artist_name=${encodeURIComponent(songArtist)}`);
         const lyricsData = await lyricsResponse.json();
         
         if (lyricsData && lyricsData.length > 0 && lyricsData[0].plainLyrics) {
+          // Den Songtext IMMER gnadenlos überschreiben
           setSongLyrics(lyricsData[0].plainLyrics);
         } else {
           console.log('LRCLIB hat für diesen speziellen Song keinen Text gefunden.');
