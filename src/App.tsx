@@ -145,7 +145,7 @@ export default function App() {
     setIsFetchingSongData(true);
 
     try {
-      // 1. Spotify Token holen (für die Dauer)
+      // 1. Spotify Token holen
       const clientId = '7b33a0f8a3244958bcba885902b66059';
       const clientSecret = '5548ad7065f543eb8667e0c60c5cd82f';
       const authResponse = await fetch('https://accounts.spotify.com/api/token', {
@@ -178,6 +178,26 @@ export default function App() {
         if (track.album && track.album.images.length > 0) {
           if (!songCover) {
             setSongCover(track.album.images[0].url);
+          }
+        }
+
+        // 🌟 NEU: Spotify nach den musikalischen Eigenschaften (BPM & Tonart) fragen!
+        const featuresResponse = await fetch(`https://api.spotify.com/v1/audio-features/${track.id}`, {
+          headers: { 'Authorization': 'Bearer ' + token }
+        });
+        const featuresData = await featuresResponse.json();
+
+        if (featuresData) {
+          // BPM ausfüllen (nur wenn Feld leer ist)
+          if (!songBpm && featuresData.tempo) {
+            setSongBpm(Math.round(featuresData.tempo).toString());
+          }
+          
+          // Tonart ausfüllen (nur wenn Feld leer ist und Spotify eine Tonart gefunden hat)
+          if (!songKey && featuresData.key !== -1) {
+            const tonarten = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'Bb', 'B'];
+            const mode = featuresData.mode === 1 ? 'Dur' : 'moll';
+            setSongKey(`${tonarten[featuresData.key]}-${mode}`);
           }
         }
       }
