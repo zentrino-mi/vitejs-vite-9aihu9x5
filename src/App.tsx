@@ -187,17 +187,19 @@ export default function App() {
         });
         const featuresData = await featuresResponse.json();
 
-        if (featuresData) {
-          // BPM ausfüllen (nur wenn Feld leer ist)
+        // Strenge Prüfung: Nur verarbeiten, wenn Spotify keinen Fehler wirft
+        if (featuresData && !featuresData.error) {
+          // BPM ausfüllen (nur wenn Feld leer ist und ein Tempo existiert)
           if (!songBpm && featuresData.tempo) {
             setSongBpm(Math.round(featuresData.tempo).toString());
           }
           
-          // Tonart ausfüllen (nur wenn Feld leer ist und Spotify eine Tonart gefunden hat)
-          if (!songKey && featuresData.key !== -1) {
-            const tonarten = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'Bb', 'B'];
+          // Tonart ausfüllen (nur wenn Feld leer ist und Spotify eine GÜLTIGE Zahl liefert)
+          if (!songKey && typeof featuresData.key === 'number' && featuresData.key >= 0 && featuresData.key <= 11) {
+            const tonarten = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'G#', 'A', 'Bb', 'B'];
+            const tonartName = tonarten[featuresData.key];
             const mode = featuresData.mode === 1 ? 'Dur' : 'moll';
-            setSongKey(`${tonarten[featuresData.key]}-${mode}`);
+            setSongKey(`${tonartName}-${mode}`);
           }
         }
       }
@@ -366,6 +368,7 @@ export default function App() {
 
   const [songNotes, setSongNotes] = useState<Record<string, string>>({});
   const [isMetronomePlaying, setIsMetronomePlaying] = useState(false);
+  const [isEditingMyProfile, setIsEditingMyProfile] = useState(false);
   const [isLiveMode, setIsLiveMode] = useState(false);
   const [isScrolling, setIsScrolling] = useState(false);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -542,6 +545,68 @@ export default function App() {
       const uniqueUsed = Array.from(new Set(data.map((p: any) => p.instrument).filter(Boolean))) as string[];
       setInstruments(prev => Array.from(new Set([...prev, ...uniqueUsed])));
     }
+  };
+  const handleUpdateProfile = async (userId: string, newBio: string, newInstrument: string) => {
+    // Sicherheitsabfrage vor dem Hochladen
+    if (!confirm('🌐 ACHTUNG: Diese Daten (inklusive Foto) werden nach dem Speichern DIREKT auf eurer öffentlichen Band-Homepage sichtbar sein!\n\nMöchtest du dein Profil jetzt online stellen?')) return;
+
+    const { error } = await supabase.from('profiles').update({ 
+      bio: newBio, 
+      instrument: newInstrument 
+    }).eq('id', userId);
+    
+    if (error) alert('Fehler beim Speichern: ' + error.message);
+    else {
+      // Erfolgsmeldung und zurück in den Steckbrief-Modus wechseln
+      alert('✅ Profil Erfolgreich Hochgeladen!');
+      fetchAllProfiles();
+      if (userId === session?.user?.id) {
+        fetchProfile(userId);
+        setIsEditingMyProfile(false);
+      }
+    }
+  };
+
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>, userId: string) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // 1. Den echten Namen des Users aus der Liste fischen
+    const targetProfile = allProfiles.find(p => p.id === userId) || myProfile;
+    const fullName = targetProfile?.full_name || 'Unbekannt';
+    
+    // 2. Leerzeichen durch Unterstriche ersetzen
+    const safeName = fullName.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '');
+    const fileExt = file.name.split('.').pop();
+    const newFileName = `${safeName}.${fileExt}`;
+
+    // 🌟 NEU: Altes Bild löschen, falls vorhanden (verhindert Datenmüll bei Wechsel von .png auf .jpg)
+    if (targetProfile.avatar_url) {
+      try {
+        const oldUrl = new URL(targetProfile.avatar_url);
+        const pathParts = oldUrl.pathname.split('/');
+        const oldFileName = pathParts[pathParts.length - 1]; // fischt "Paul_Zentis.png" aus der URL
+        
+        if (oldFileName) {
+           await supabase.storage.from('avatars').remove([oldFileName]);
+        }
+      } catch (err) {
+        console.log("Altes Bild konnte nicht gelöscht werden (vielleicht schon weg):", err);
+      }
+    }
+
+    // 3. Neues Bild hochladen (upsert als doppelter Schutz)
+    const { error: uploadError } = await supabase.storage.from('avatars').upload(newFileName, file, { upsert: true });
+    if (uploadError) return alert('Fehler beim Bild-Upload: ' + uploadError.message);
+
+    // 4. URL abrufen und Zeitstempel für den Browser-Cache anhängen
+    const { data } = supabase.storage.from('avatars').getPublicUrl(newFileName);
+    const cacheBusterUrl = `${data.publicUrl}?t=${Date.now()}`;
+
+    await supabase.from('profiles').update({ avatar_url: cacheBusterUrl }).eq('id', userId);
+    
+    fetchAllProfiles();
+    if (userId === session?.user?.id) fetchProfile(userId);
   };
 
   const fetchEvents = async () => {
@@ -1511,6 +1576,7 @@ export default function App() {
               )}
               {myProfile?.app_rolle !== 'Techniker' && <button onClick={() => { navigateTo('kalender'); loadAbsenceFormDefaults(); }} className={`text-2xl font-bold ${currentView === 'kalender' ? 'text-amber-500' : 'text-gray-500'}`}>🌴 Kalender / Urlaub</button>}
               {myProfile?.app_rolle !== 'Techniker' && <button onClick={() => navigateTo('bandkasse')} className={`text-2xl font-bold ${currentView === 'bandkasse' ? 'text-amber-500' : 'text-gray-500'}`}>💰 Bandkasse</button>}
+              <button onClick={() => navigateTo('profil')} className={`text-2xl font-bold ${currentView === 'profil' ? 'text-amber-500' : 'text-gray-500'}`}>👤 Mein Profil</button>
               
               {myProfile.is_admin && (
                 <button onClick={() => navigateTo('verwaltung')} className={`text-2xl font-bold flex items-center gap-3 ${currentView === 'verwaltung' ? 'text-amber-500' : 'text-gray-500'}`}>
@@ -2774,7 +2840,130 @@ export default function App() {
               </div>
             </div>
           )}
+{/* VIEW: PROFIL (Für Band-Webseite) */}
+{currentView === 'profil' && (
+            <div className="space-y-8">
+              <div className="flex justify-between items-start gap-4">
+                <div>
+                  <h2 className="text-2xl font-black text-white">👤 Mein Band-Profil</h2>
+                  <p className="text-sm text-gray-400 mt-1">Diese Daten werden direkt auf unserer öffentlichen Band-Webseite angezeigt.</p>
+                </div>
+                {!isEditingMyProfile && (
+                  <button onClick={() => setIsEditingMyProfile(true)} className="bg-amber-500 hover:bg-amber-600 text-gray-950 font-bold px-4 py-2 rounded-xl transition-transform active:scale-95 shrink-0 shadow-lg">
+                    ✏️ Bearbeiten
+                  </button>
+                )}
+              </div>
 
+              {/* EIGENES PROFIL */}
+              <div className="bg-gray-900/60 border border-gray-800 rounded-3xl shadow-lg overflow-hidden relative">
+                {/* Banner Header */}
+                <div className="h-32 bg-gradient-to-r from-gray-800 to-gray-900 border-b border-gray-800 relative overflow-hidden">
+                  <div className="absolute inset-0 opacity-20 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-amber-500 via-transparent to-transparent"></div>
+                </div>
+
+                {!isEditingMyProfile ? (
+                  /* ANSICHT: STECKBRIEF */
+                  <div className="p-6 sm:p-8 relative">
+                    <div className="absolute -top-16 left-6 sm:left-8 w-32 h-32 rounded-2xl bg-gray-950 border-4 border-gray-900 overflow-hidden shadow-2xl">
+                      {myProfile.avatar_url ? (
+                        <img src={myProfile.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="w-full h-full flex items-center justify-center text-4xl bg-gray-900">📸</span>
+                      )}
+                    </div>
+                    
+                    <div className="mt-16 pt-2">
+                      <h3 className="text-3xl font-black text-white">{myProfile.full_name}</h3>
+                      <p className="text-lg text-amber-500 font-bold uppercase tracking-widest mt-1">{myProfile.instrument || 'Instrument nicht angegeben'}</p>
+                      
+                      <div className="mt-8 bg-gray-950/50 border border-gray-800 p-6 rounded-2xl">
+                        <h4 className="text-[12px] font-black text-gray-500 uppercase tracking-widest mb-3">Über mich</h4>
+                        <p className="text-gray-200 leading-relaxed whitespace-pre-wrap font-sans text-[16px]">
+                          {myProfile.bio ? myProfile.bio : <span className="italic text-gray-600">Noch kein Text für die Homepage hinterlegt. Klicke oben auf "Bearbeiten", um dich vorzustellen!</span>}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  /* ANSICHT: BEARBEITEN FORMULAR */
+                  <div className="p-6 sm:p-8 relative">
+                    <div className="absolute -top-16 left-6 sm:left-8 w-32 h-32 rounded-2xl bg-gray-950 border-4 border-gray-900 overflow-hidden shadow-xl group">
+                      {myProfile.avatar_url ? (
+                        <img src={myProfile.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="w-full h-full flex items-center justify-center text-4xl bg-gray-900">📸</span>
+                      )}
+                      <label className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer text-[12px] font-bold text-white uppercase tracking-wider text-center p-2">
+                        <span className="text-2xl mb-1">⬆️</span>
+                        Foto ändern
+                        <input type="file" accept="image/*" className="hidden" onChange={(e) => handleAvatarUpload(e, myProfile.id)} />
+                      </label>
+                    </div>
+
+                    <form onSubmit={(e) => { e.preventDefault(); handleUpdateProfile(myProfile.id, myProfile.bio, myProfile.instrument); }} className="mt-16 pt-2 space-y-5">
+                      <div className="bg-amber-500/10 border border-amber-500/20 p-4 rounded-xl mb-6">
+                        <p className="text-sm font-bold text-amber-500">Du bist im Bearbeitungsmodus.</p>
+                        <p className="text-[12px] text-gray-400 mt-1">Änderungen am Foto werden sofort gespeichert. Text-Änderungen erst beim Klick auf "Online stellen".</p>
+                      </div>
+                      
+                      <div>
+                        <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Dein Instrument / Rolle</label>
+                        <input type="text" value={myProfile.instrument || ''} onChange={(e) => setMyProfile({...myProfile, instrument: e.target.value})} placeholder="z.B. Lead Gitarre & Vocals" className="w-full bg-gray-950 border border-gray-800 rounded-xl px-4 py-3 text-[16px] text-white focus:outline-none focus:border-amber-500 shadow-inner" />
+                      </div>
+                      <div>
+                        <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Über dich (Bio für die Webseite)</label>
+                        <textarea value={myProfile.bio || ''} onChange={(e) => setMyProfile({...myProfile, bio: e.target.value})} placeholder="Schreib ein paar coole Sätze über dich, dein Gear oder deine musikalischen Einflüsse..." rows={6} className="w-full bg-gray-950 border border-gray-800 rounded-xl px-4 py-3 text-[16px] text-white focus:outline-none focus:border-amber-500 resize-none shadow-inner" />
+                      </div>
+                      <div className="flex gap-3 pt-4 border-t border-gray-800">
+                        <button type="button" onClick={() => setIsEditingMyProfile(false)} className="bg-gray-800 hover:bg-gray-700 text-white font-bold px-6 py-3 rounded-xl transition-colors">Abbrechen</button>
+                        <button type="submit" className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-6 py-3 rounded-xl transition-colors shadow-lg shadow-emerald-600/20">💾 Online stellen</button>
+                      </div>
+                    </form>
+                  </div>
+                )}
+              </div>
+
+              {/* ADMIN BEREICH: ANDERE PROFILE */}
+              {myProfile.is_admin && (
+                <div className="pt-8 border-t border-gray-900 mt-8">
+                  <h3 className="text-lg font-bold text-amber-500 mb-4">🛡️ Admin: Alle Bandmitglieder bearbeiten</h3>
+                  <div className="space-y-3">
+                    {allProfiles.filter(p => p.id !== session.user.id).map(p => (
+                      <details key={p.id} className="bg-gray-900/40 border border-gray-800 rounded-xl group overflow-hidden">
+                        <summary className="p-4 font-bold text-gray-200 cursor-pointer hover:bg-gray-800/50 transition-colors list-none flex justify-between items-center">
+                          <span className="flex items-center gap-3">
+                            {p.avatar_url ? <img src={p.avatar_url} className="w-8 h-8 rounded-full object-cover border border-gray-700" alt="" /> : <span className="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center text-[10px]">📸</span>}
+                            {p.full_name}
+                          </span>
+                          <span className="text-gray-500 text-sm group-open:rotate-180 transition-transform">▼</span>
+                        </summary>
+                        
+                        <div className="p-6 border-t border-gray-800 bg-gray-950/30 flex flex-col sm:flex-row gap-6">
+                           <div className="w-24 h-24 rounded-2xl bg-gray-950 border border-gray-800 overflow-hidden relative group/avatar shrink-0">
+                              {p.avatar_url ? <img src={p.avatar_url} alt="" className="w-full h-full object-cover" /> : <span className="w-full h-full flex items-center justify-center text-2xl">📸</span>}
+                              <label className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover/avatar:opacity-100 transition-opacity cursor-pointer text-[10px] font-bold text-white uppercase text-center p-1">
+                                Bild<br/>ändern
+                                <input type="file" accept="image/*" className="hidden" onChange={(e) => handleAvatarUpload(e, p.id)} />
+                              </label>
+                           </div>
+                           <form onSubmit={(e) => { 
+                             e.preventDefault(); 
+                             const form = e.target as HTMLFormElement;
+                             handleUpdateProfile(p.id, form.bio.value, form.instrument.value); 
+                           }} className="flex-1 space-y-3">
+                              <input name="instrument" defaultValue={p.instrument || ''} placeholder="Instrument..." className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-sm text-white focus:border-amber-500" />
+                              <textarea name="bio" defaultValue={p.bio || ''} placeholder="Bio Text..." rows={3} className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-sm text-white focus:border-amber-500 resize-none" />
+                              <button type="submit" className="bg-gray-800 hover:bg-gray-700 text-white text-[12px] font-bold px-4 py-2 rounded-lg transition-colors">Für {p.full_name.split(' ')[0]} online stellen</button>
+                           </form>
+                        </div>
+                      </details>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           {/* VIEW: BANDKASSE */}
           {currentView === 'bandkasse' && !planningSetlistEvent && !planningSetlistTemplate && (
             <div className="space-y-6">
