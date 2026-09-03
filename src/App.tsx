@@ -571,36 +571,21 @@ export default function App() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // 1. Den echten Namen des Users aus der Liste fischen
+    // 1. Den echten Namen des Users aus der Liste fischen (z.B. "Paul Zentis")
     const targetProfile = allProfiles.find(p => p.id === userId) || myProfile;
     const fullName = targetProfile?.full_name || 'Unbekannt';
     
-    // 2. Leerzeichen durch Unterstriche ersetzen
+    // 2. Leerzeichen durch Unterstriche ersetzen (ergibt "Paul_Zentis")
     const safeName = fullName.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '');
     const fileExt = file.name.split('.').pop();
-    const newFileName = `${safeName}.${fileExt}`;
+    const fileName = `${safeName}.${fileExt}`;
 
-    // 🌟 NEU: Altes Bild löschen, falls vorhanden (verhindert Datenmüll bei Wechsel von .png auf .jpg)
-    if (targetProfile.avatar_url) {
-      try {
-        const oldUrl = new URL(targetProfile.avatar_url);
-        const pathParts = oldUrl.pathname.split('/');
-        const oldFileName = pathParts[pathParts.length - 1]; // fischt "Paul_Zentis.png" aus der URL
-        
-        if (oldFileName) {
-           await supabase.storage.from('avatars').remove([oldFileName]);
-        }
-      } catch (err) {
-        console.log("Altes Bild konnte nicht gelöscht werden (vielleicht schon weg):", err);
-      }
-    }
-
-    // 3. Neues Bild hochladen (upsert als doppelter Schutz)
-    const { error: uploadError } = await supabase.storage.from('avatars').upload(newFileName, file, { upsert: true });
+    // 3. Hochladen mit "upsert: true", damit alte Profilbilder einfach sauber überschrieben werden
+    const { error: uploadError } = await supabase.storage.from('avatars').upload(fileName, file, { upsert: true });
     if (uploadError) return alert('Fehler beim Bild-Upload: ' + uploadError.message);
 
-    // 4. URL abrufen und Zeitstempel für den Browser-Cache anhängen
-    const { data } = supabase.storage.from('avatars').getPublicUrl(newFileName);
+    // 4. URL abrufen und einen Zeitstempel anhängen, damit der Browser nicht das alte Bild im Cache behält!
+    const { data } = supabase.storage.from('avatars').getPublicUrl(fileName);
     const cacheBusterUrl = `${data.publicUrl}?t=${Date.now()}`;
 
     await supabase.from('profiles').update({ avatar_url: cacheBusterUrl }).eq('id', userId);
@@ -2933,7 +2918,7 @@ export default function App() {
                       <details key={p.id} className="bg-gray-900/40 border border-gray-800 rounded-xl group overflow-hidden">
                         <summary className="p-4 font-bold text-gray-200 cursor-pointer hover:bg-gray-800/50 transition-colors list-none flex justify-between items-center">
                           <span className="flex items-center gap-3">
-                            {p.avatar_url ? <img src={p.avatar_url} className="w-8 h-8 rounded-full object-cover border border-gray-700" alt="" /> : <span className="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center text-[10px]">📸</span>}
+                            {p.avatar_url ? <img src={p.avatar_url} className="w-8 h-8 rounded-full object-cover object-center border border-gray-700" alt="" /> : <span className="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center text-[10px]">📸</span>}
                             {p.full_name}
                           </span>
                           <span className="text-gray-500 text-sm group-open:rotate-180 transition-transform">▼</span>
@@ -2941,7 +2926,7 @@ export default function App() {
                         
                         <div className="p-6 border-t border-gray-800 bg-gray-950/30 flex flex-col sm:flex-row gap-6">
                            <div className="w-24 h-24 rounded-2xl bg-gray-950 border border-gray-800 overflow-hidden relative group/avatar shrink-0">
-                              {p.avatar_url ? <img src={p.avatar_url} alt="" className="w-full h-full object-cover" /> : <span className="w-full h-full flex items-center justify-center text-2xl">📸</span>}
+                              {p.avatar_url ? <img src={p.avatar_url} alt="" className="w-full h-full object-cover object-center" /> : <span className="w-full h-full flex items-center justify-center text-2xl">📸</span>}
                               <label className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover/avatar:opacity-100 transition-opacity cursor-pointer text-[10px] font-bold text-white uppercase text-center p-1">
                                 Bild<br/>ändern
                                 <input type="file" accept="image/*" className="hidden" onChange={(e) => handleAvatarUpload(e, p.id)} />
@@ -2964,6 +2949,7 @@ export default function App() {
               )}
             </div>
           )}
+
           {/* VIEW: BANDKASSE */}
           {currentView === 'bandkasse' && !planningSetlistEvent && !planningSetlistTemplate && (
             <div className="space-y-6">
