@@ -1,6 +1,37 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from './supabaseClient';
 import { jsPDF } from "jspdf"; 
+import Cropper from 'react-easy-crop';
+const createImage = (url: string) =>
+  new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    image.addEventListener('load', () => resolve(image));
+    image.addEventListener('error', (error) => reject(error));
+    image.setAttribute('crossOrigin', 'anonymous');
+    image.src = url;
+  });
+
+const getCroppedImg = async (imageSrc: string, pixelCrop: any, fileName: string): Promise<File> => {
+  const image = await createImage(imageSrc);
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('No 2d context');
+
+  canvas.width = pixelCrop.width;
+  canvas.height = pixelCrop.height;
+
+  ctx.drawImage(
+    image, pixelCrop.x, pixelCrop.y, pixelCrop.width, pixelCrop.height,
+    0, 0, pixelCrop.width, pixelCrop.height
+  );
+
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (!blob) return reject(new Error('Canvas is empty'));
+      resolve(new File([blob], fileName, { type: 'image/jpeg' }));
+    }, 'image/jpeg', 0.9);
+  });
+};
 
 export default function App() {
   const [isLoading, setIsLoading] = useState(true);
@@ -567,29 +598,62 @@ export default function App() {
     }
   };
 
-  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>, userId: string) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // --- NEUE CROPPER STATES ---
+  const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null);
+  const [targetUserIdForCrop, setTargetUserIdForCrop] = useState<string | null>(null);
 
-    // 1. Den echten Namen des Users aus der Liste fischen (z.B. "Paul Zentis")
+  // 1. Wird aufgerufen, wenn jemand ein Bild vom Handy/PC auswählt
+  const handleSelectFileForCrop = (e: React.ChangeEvent<HTMLInputElement>, userId: string) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const reader = new FileReader();
+      reader.addEventListener('load', () => setCropImageSrc(reader.result?.toString() || null));
+      reader.readAsDataURL(e.target.files[0]);
+      setTargetUserIdForCrop(userId);
+    }
+    e.target.value = ''; // Input zurücksetzen
+  };
+
+  // 2. Wird aufgerufen, wenn man im Cropper auf "Zuschneiden & Speichern" klickt
+  const handleSaveCroppedImage = async () => {
+    if (!cropImageSrc || !croppedAreaPixels || !targetUserIdForCrop) return;
+    try {
+      // Bild zuschneiden
+      const croppedFile = await getCroppedImg(cropImageSrc, croppedAreaPixels, 'avatar.jpg');
+      // Hochladen
+      await uploadAvatarFile(croppedFile, targetUserIdForCrop);
+      // Cropper schließen
+      setCropImageSrc(null); 
+    } catch (e) {
+      console.error('Fehler beim Zuschneiden:', e);
+    }
+  };
+
+  // 3. Der eigentliche Upload-Vorgang zu Supabase
+  const uploadAvatarFile = async (file: File, userId: string) => {
     const targetProfile = allProfiles.find(p => p.id === userId) || myProfile;
     const fullName = targetProfile?.full_name || 'Unbekannt';
-    
-    // 2. Leerzeichen durch Unterstriche ersetzen (ergibt "Paul_Zentis")
     const safeName = fullName.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '');
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${safeName}.${fileExt}`;
+    const newFileName = `${safeName}.jpg`;
 
-    // 3. Hochladen mit "upsert: true", damit alte Profilbilder einfach sauber überschrieben werden
-    const { error: uploadError } = await supabase.storage.from('avatars').upload(fileName, file, { upsert: true });
+    if (targetProfile.avatar_url) {
+      try {
+        const oldUrl = new URL(targetProfile.avatar_url);
+        const pathParts = oldUrl.pathname.split('/');
+        const oldFileName = pathParts[pathParts.length - 1]; 
+        if (oldFileName) await supabase.storage.from('avatars').remove([oldFileName]);
+      } catch (err) {}
+    }
+
+    const { error: uploadError } = await supabase.storage.from('avatars').upload(newFileName, file, { upsert: true });
     if (uploadError) return alert('Fehler beim Bild-Upload: ' + uploadError.message);
 
-    // 4. URL abrufen und einen Zeitstempel anhängen, damit der Browser nicht das alte Bild im Cache behält!
-    const { data } = supabase.storage.from('avatars').getPublicUrl(fileName);
+    const { data } = supabase.storage.from('avatars').getPublicUrl(newFileName);
     const cacheBusterUrl = `${data.publicUrl}?t=${Date.now()}`;
 
     await supabase.from('profiles').update({ avatar_url: cacheBusterUrl }).eq('id', userId);
-    
     fetchAllProfiles();
     if (userId === session?.user?.id) fetchProfile(userId);
   };
@@ -1490,34 +1554,45 @@ export default function App() {
     return (
       <div className="h-[100dvh] w-full bg-gray-950 text-gray-100 font-sans relative overflow-x-hidden overflow-y-auto selection:bg-amber-500 selection:text-black m-0 p-0">
         
-        {/* --- LIVE BÜHNEN-MODUS OVERLAY --- */}
-        {isLiveMode && selectedSong && (
-          <div className="fixed inset-0 bg-black z-[100] text-white overflow-y-auto p-4 sm:p-8 flex flex-col" id="live-mode-container">
-             <div className="sticky top-0 bg-black/90 p-4 border-b border-gray-800 flex justify-between items-center mb-6 z-10 backdrop-blur-sm rounded-xl">
+        {/* --- BILD-ZUSCHNEIDEN OVERLAY --- */}
+        {cropImageSrc && (
+          <div className="fixed inset-0 bg-black/95 z-[999] flex flex-col items-center justify-center p-4 sm:p-6 backdrop-blur-sm">
+            <div className="w-full max-w-xl mb-4 flex justify-between items-center">
+              <div>
+                <h3 className="text-xl font-black text-white">📸 Profilbild anpassen</h3>
+                <p className="text-sm text-gray-400">Verschiebe und zoome das Bild so, wie du es haben willst.</p>
+              </div>
+            </div>
+            
+            <div className="relative w-full max-w-xl h-[50vh] sm:h-[60vh] bg-gray-900 rounded-2xl overflow-hidden mb-6 border border-gray-800 shadow-2xl">
+              <Cropper
+                image={cropImageSrc}
+                crop={crop}
+                zoom={zoom}
+                aspect={1} 
+                cropShape="rect"
+                showGrid={true}
+                onCropChange={setCrop}
+                onCropComplete={(croppedArea, croppedAreaPixels) => setCroppedAreaPixels(croppedAreaPixels)}
+                onZoomChange={setZoom}
+              />
+            </div>
+            
+            <div className="w-full max-w-xl bg-gray-900 p-5 rounded-2xl border border-gray-800 flex flex-col gap-5 shadow-2xl">
                <div>
-                 <h2 className="text-2xl sm:text-4xl font-black text-amber-500">{selectedSong.title}</h2>
-                 <p className="text-gray-400 font-bold text-lg mt-1">{selectedSong.artist}</p>
+                 <label className="text-gray-400 text-[12px] font-bold uppercase mb-3 flex justify-between">
+                   <span>🔍 Zoomen</span>
+                   <span className="text-amber-500">{Math.round(zoom * 100)}%</span>
+                 </label>
+                 <input type="range" value={zoom} min={1} max={3} step={0.1} onChange={(e) => setZoom(Number(e.target.value))} className="w-full accent-amber-500 h-2 bg-gray-800 rounded-lg appearance-none cursor-pointer" />
                </div>
-               <div className="flex gap-2 sm:gap-4 flex-wrap justify-end items-center">
-                 {liveSetlistMode && (
-                   <div className="flex gap-2 mr-2 border-r border-gray-800 pr-4">
-                     <button onClick={prevLiveSong} disabled={liveSongIndex === 0} className="px-4 py-3 bg-gray-800 disabled:opacity-30 rounded-xl font-bold text-lg hover:bg-gray-700">⏮ Zurück</button>
-                     <div className="px-3 py-3 font-mono text-gray-400 font-bold bg-gray-900 rounded-xl">{liveSongIndex + 1} / {liveSetlistSongs.length}</div>
-                     <button onClick={nextLiveSong} disabled={liveSongIndex === liveSetlistSongs.length - 1} className="px-4 py-3 bg-gray-800 disabled:opacity-30 rounded-xl font-bold text-lg hover:bg-gray-700">Weiter ⏭</button>
-                   </div>
-                 )}
-                 <button onClick={() => setIsScrolling(!isScrolling)} className={`px-4 py-3 rounded-xl font-bold text-lg transition-colors shadow-lg ${isScrolling ? 'bg-blue-500 text-white' : 'bg-gray-800 hover:bg-gray-700'}`}>
-                   {isScrolling ? '⏸ Pause' : '▶️ Scroll'}
-                 </button>
-                 <button onClick={() => toggleMetronome(selectedSong.bpm)} className={`px-4 py-3 rounded-xl font-bold text-lg transition-all shadow-lg ${isMetronomePlaying ? 'bg-red-500 text-white shadow-[0_0_20px_rgba(239,68,68,0.6)]' : 'bg-gray-800 hover:bg-gray-700'}`}>
-                   ⏱ {selectedSong.bpm || '?'} BPM
-                 </button>
-                 <button onClick={() => { setIsLiveMode(false); setLiveSetlistMode(false); }} className="px-4 py-3 bg-red-500/20 text-red-400 border border-red-500/50 rounded-xl text-lg font-bold hover:bg-red-500/30">X</button>
+               <div className="flex gap-3 pt-2">
+                  <button onClick={() => { setCropImageSrc(null); setZoom(1); }} className="w-1/3 bg-gray-800 hover:bg-gray-700 text-white font-bold py-3.5 rounded-xl transition-colors text-sm sm:text-[16px]">Abbrechen</button>
+                  <button onClick={handleSaveCroppedImage} className="w-2/3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3.5 rounded-xl transition-colors shadow-lg shadow-emerald-600/20 text-sm sm:text-[16px]">
+                    ✂️ Zuschneiden & Hochladen
+                  </button>
                </div>
-             </div>
-             <div className="text-2xl sm:text-3xl leading-[1.8] font-sans whitespace-pre-wrap px-4 pb-[50vh] text-gray-100">
-               {selectedSong.lyrics || 'Kein Text hinterlegt.'}
-             </div>
+            </div>
           </div>
         )}
 
@@ -2882,7 +2957,7 @@ export default function App() {
                       <label className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer text-[12px] font-bold text-white uppercase tracking-wider text-center p-2">
                         <span className="text-2xl mb-1">⬆️</span>
                         Foto ändern
-                        <input type="file" accept="image/*" className="hidden" onChange={(e) => handleAvatarUpload(e, myProfile.id)} />
+                        <input type="file" accept="image/*" className="hidden" onChange={(e) => handleSelectFileForCrop(e, myProfile.id)} />
                       </label>
                     </div>
 
@@ -2929,7 +3004,7 @@ export default function App() {
                               {p.avatar_url ? <img src={p.avatar_url} alt="" className="w-full h-full object-cover object-center" /> : <span className="w-full h-full flex items-center justify-center text-2xl">📸</span>}
                               <label className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover/avatar:opacity-100 transition-opacity cursor-pointer text-[10px] font-bold text-white uppercase text-center p-1">
                                 Bild<br/>ändern
-                                <input type="file" accept="image/*" className="hidden" onChange={(e) => handleAvatarUpload(e, p.id)} />
+                                <input type="file" accept="image/*" className="hidden" onChange={(e) => handleSelectFileForCrop(e, p.id)} />
                               </label>
                            </div>
                            <form onSubmit={(e) => { 
