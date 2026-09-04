@@ -705,25 +705,47 @@ export default function App() {
   };
 
   const [isAddingFotoAlbum, setIsAddingFotoAlbum] = useState(false);
+  const [editingAlbumId, setEditingAlbumId] = useState<string | null>(null);
   const [newAlbumTitle, setNewAlbumTitle] = useState('');
   const [newAlbumDate, setNewAlbumDate] = useState(getTodayString());
 
-  const handleCreateFotoAlbum = async (e: React.FormEvent) => {
+  const handleSaveFotoAlbum = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newAlbumTitle.trim() || !newAlbumDate) return;
     
-    // Wir fangen eventuelle Datenbank-Fehler jetzt direkt ab:
-    const { error } = await supabase.from('foto_alben').insert([{ title: newAlbumTitle, event_date: newAlbumDate }]);
-    
-    if (error) {
-      alert('Datenbank-Fehler beim Anlegen: ' + error.message);
-      return;
+    if (editingAlbumId) {
+      const { error } = await supabase.from('foto_alben').update({ title: newAlbumTitle, event_date: newAlbumDate }).eq('id', editingAlbumId);
+      if (error) return alert('Fehler beim Bearbeiten: ' + error.message);
+    } else {
+      const { error } = await supabase.from('foto_alben').insert([{ title: newAlbumTitle, event_date: newAlbumDate }]);
+      if (error) return alert('Datenbank-Fehler beim Anlegen: ' + error.message);
     }
     
     setIsAddingFotoAlbum(false);
+    setEditingAlbumId(null);
     setNewAlbumTitle('');
     setNewAlbumDate(getTodayString());
     fetchFotoData();
+  };
+
+  const handleDeleteFotoAlbum = async (albumId: string) => {
+    if (!confirm('ACHTUNG: Willst du dieses Album und ALLE darin enthaltenen Fotos wirklich komplett löschen?')) return;
+    const fotosToDelete = bandFotos.filter(f => f.album_id === albumId);
+    if (fotosToDelete.length > 0) {
+      const fileNames = fotosToDelete.map(f => f.file_name);
+      await supabase.storage.from('band_fotos').remove(fileNames);
+    }
+    const { error } = await supabase.from('foto_alben').delete().eq('id', albumId);
+    if (error) alert('Fehler beim Löschen: ' + error.message);
+    else fetchFotoData();
+  };
+  
+  const startEditFotoAlbum = (album: any) => {
+    setEditingAlbumId(album.id);
+    setNewAlbumTitle(album.title);
+    setNewAlbumDate(album.event_date);
+    setIsAddingFotoAlbum(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleFotoUploadForAlbum = async (e: React.ChangeEvent<HTMLInputElement>, albumId: string) => {
@@ -755,6 +777,16 @@ export default function App() {
     const { error } = await supabase.from('foto_tags').update({ status }).eq('id', tagId);
     if (error) {
       alert('Datenbank-Fehler beim Bestätigen: ' + error.message);
+    } else {
+      fetchFotoData();
+    }
+  };
+
+  const handleRemoveTag = async (tagId: string) => {
+    if (!confirm('Markierung wirklich entfernen?')) return;
+    const { error } = await supabase.from('foto_tags').delete().eq('id', tagId);
+    if (error) {
+      alert('Fehler beim Entfernen: ' + error.message);
     } else {
       fetchFotoData();
     }
@@ -2509,8 +2541,8 @@ export default function App() {
                   )}
                 </div>
 
-                {/* Karte 2: Offene Abstimmungen (Für Techniker versteckt) */}
-                {myProfile?.app_rolle !== 'Techniker' && (
+                {/* Karte 2: Offene Abstimmungen (Für Techniker und Media versteckt) */}
+                {myProfile?.app_rolle !== 'Techniker' && myProfile?.app_rolle !== 'Media' && (
                   <div className={`border p-5 rounded-2xl shadow-lg ${myPendingEvents.length > 0 ? 'bg-red-500/10 border-red-500/30' : 'bg-emerald-500/10 border-emerald-500/30'}`}>
                     <h3 className={`text-sm font-bold uppercase tracking-wider mb-3 ${myPendingEvents.length > 0 ? 'text-red-400' : 'text-emerald-400'}`}>Deine Abstimmungen</h3>
                     {myPendingEvents.length > 0 ? (
@@ -2922,6 +2954,8 @@ export default function App() {
 {/* VIEW: FOTOS & SOCIAL MEDIA */}
 {currentView === 'fotos' && !planningSetlistEvent && !planningSetlistTemplate && (() => {
             const isMediaOrAdmin = myProfile?.app_rolle === 'Media' || myProfile?.is_admin;
+            // Wir nutzen deine schon existierende Funktion, um die Alben nach Monaten zu sortieren!
+            const groupedAlben = getGroupedEventsByMonth(fotoAlben);
             
             return (
               <div className="space-y-6">
@@ -2931,15 +2965,15 @@ export default function App() {
                     <p className="text-sm text-gray-400">{isMediaOrAdmin ? 'Shooting-Alben verwalten & Leute markieren.' : 'Gib Bilder frei, auf denen du zu sehen bist.'}</p>
                   </div>
                   {isMediaOrAdmin && (
-                    <button onClick={() => { setIsAddingFotoAlbum(!isAddingFotoAlbum); setNewAlbumDate(getTodayString()); }} className="bg-pink-600 hover:bg-pink-700 text-white text-sm font-bold px-4 py-2 rounded-xl shadow-lg transition-colors">
+                    <button onClick={() => { setIsAddingFotoAlbum(!isAddingFotoAlbum); setNewAlbumDate(getTodayString()); setEditingAlbumId(null); setNewAlbumTitle(''); }} className="bg-pink-600 hover:bg-pink-700 text-white text-sm font-bold px-4 py-2 rounded-xl shadow-lg transition-colors">
                       {isAddingFotoAlbum ? 'Abbrechen' : '+ Neues Album anlegen'}
                     </button>
                   )}
                 </div>
 
                 {isAddingFotoAlbum && isMediaOrAdmin && (
-                  <form onSubmit={handleCreateFotoAlbum} className="bg-gray-900/90 border border-pink-500/30 p-5 rounded-2xl space-y-4 shadow-lg mb-6">
-                    <h3 className="text-sm font-bold text-pink-400 uppercase tracking-wider mb-2">📸 Neues Foto-Album erstellen</h3>
+                  <form onSubmit={handleSaveFotoAlbum} className="bg-gray-900/90 border border-pink-500/30 p-5 rounded-2xl space-y-4 shadow-lg mb-6">
+                    <h3 className="text-sm font-bold text-pink-400 uppercase tracking-wider mb-2">{editingAlbumId ? '✏️ Foto-Album bearbeiten' : '📸 Neues Foto-Album erstellen'}</h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Name des Termins/Shootings</label>
@@ -2951,133 +2985,151 @@ export default function App() {
                       </div>
                     </div>
                     <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[16px] rounded-xl py-3 mt-2 transition-colors">
-                      Album speichern
+                      {editingAlbumId ? 'Änderungen speichern' : 'Album speichern'}
                     </button>
                   </form>
                 )}
 
-                {fotoAlben.length === 0 ? (
+                {Object.keys(groupedAlben).length === 0 ? (
                   <div className="bg-gray-900/60 border border-gray-800 p-8 rounded-2xl text-center">
                     <p className="text-gray-400">Es wurden noch keine Foto-Termine/Alben angelegt.</p>
                   </div>
                 ) : (
-                  <div className="space-y-4">
-                    {fotoAlben.map(album => {
-                      const albumFotos = bandFotos.filter(f => f.album_id === album.id);
-                      
-                      // Filtere die Fotos: Admins/Media sehen alle im Album, Musiker nur die, wo sie getaggt sind
-                      const visibleFotos = isMediaOrAdmin 
-                        ? albumFotos 
-                        : albumFotos.filter(f => fotoTags.some(t => t.foto_id === f.id && t.user_id === session.user.id));
-                      
-                      // Wenn ein normaler Musiker im Album 0 getaggte Fotos hat, zeige das Album gar nicht erst an
-                      if (!isMediaOrAdmin && visibleFotos.length === 0) return null;
+                  <div className="space-y-6">
+                    {Object.keys(groupedAlben).map(monthYearKey => (
+                      <div key={monthYearKey} className="space-y-3">
+                        <h3 className="text-sm font-black text-pink-500 tracking-wider uppercase border-b border-gray-900 pb-1">{monthYearKey}</h3>
+                        <div className="space-y-4">
+                          {groupedAlben[monthYearKey].map((album: any) => {
+                            const albumFotos = bandFotos.filter(f => f.album_id === album.id);
+                            
+                            // Filtere die Fotos: Admins/Media sehen alle im Album, Musiker nur die, wo sie getaggt sind
+                            const visibleFotos = isMediaOrAdmin 
+                              ? albumFotos 
+                              : albumFotos.filter(f => fotoTags.some(t => t.foto_id === f.id && t.user_id === session.user.id));
+                            
+                            // Wenn ein normaler Musiker im Album 0 getaggte Fotos hat, zeige das Album gar nicht erst an
+                            if (!isMediaOrAdmin && visibleFotos.length === 0) return null;
 
-                      const isExpanded = expandedAlbumId === album.id;
+                            const isExpanded = expandedAlbumId === album.id;
 
-                      return (
-                        <div key={album.id} className="bg-gray-900/60 border border-gray-800 rounded-2xl overflow-hidden shadow-sm">
-                          <div onClick={() => setExpandedAlbumId(isExpanded ? null : album.id)} className="p-4 flex justify-between items-center cursor-pointer hover:bg-gray-800/50 transition-colors">
-                            <div>
-                              <h3 className="text-[16px] font-bold text-gray-100">{album.title}</h3>
-                              <p className="text-[12px] text-pink-400 font-bold tracking-wider mt-0.5 uppercase">📅 {new Date(album.event_date).toLocaleDateString('de-DE')}</p>
-                            </div>
-                            <div className="flex items-center gap-4">
-                              <span className="text-sm font-bold text-gray-400 bg-gray-950 px-3 py-1 rounded-lg border border-gray-800">{visibleFotos.length} Fotos</span>
-                              <span className="text-gray-500 font-bold">{isExpanded ? '▼' : '▶'}</span>
-                            </div>
-                          </div>
-
-                          {isExpanded && (
-                            <div className="p-4 border-t border-gray-800 bg-gray-950/30">
-                              {isMediaOrAdmin && (
-                                <div className="mb-4">
-                                  <label className="bg-gray-800 hover:bg-gray-700 text-gray-300 px-4 py-2 rounded-xl text-sm font-bold cursor-pointer transition-colors border border-gray-700 inline-block">
-                                    📸 + Foto hier hochladen
-                                    <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFotoUploadForAlbum(e, album.id)} />
-                                  </label>
+                            return (
+                              <div key={album.id} className="bg-gray-900/60 border border-gray-800 rounded-2xl overflow-hidden shadow-sm">
+                                <div className="p-4 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 cursor-pointer hover:bg-gray-800/50 transition-colors" onClick={() => setExpandedAlbumId(isExpanded ? null : album.id)}>
+                                  <div>
+                                    <h3 className="text-[16px] font-bold text-gray-100">{album.title}</h3>
+                                    <p className="text-[12px] text-pink-400 font-bold tracking-wider mt-0.5 uppercase">📅 {new Date(album.event_date).toLocaleDateString('de-DE')}</p>
+                                  </div>
+                                  <div className="flex items-center gap-3">
+                                    {isMediaOrAdmin && (
+                                      <div className="flex gap-2 mr-2" onClick={e => e.stopPropagation()}>
+                                        <button onClick={() => startEditFotoAlbum(album)} className="text-[12px] bg-gray-800 text-gray-300 px-2.5 py-1.5 rounded-lg hover:bg-gray-700 transition-colors">✏️ Edit</button>
+                                        <button onClick={() => handleDeleteFotoAlbum(album.id)} className="text-[12px] bg-red-500/10 text-red-400 px-2.5 py-1.5 rounded-lg hover:bg-red-500/20 transition-colors">🗑️ Löschen</button>
+                                      </div>
+                                    )}
+                                    <span className="text-sm font-bold text-gray-400 bg-gray-950 px-3 py-1 rounded-lg border border-gray-800 shrink-0">{visibleFotos.length} Fotos</span>
+                                    <span className="text-gray-500 font-bold shrink-0">{isExpanded ? '▼' : '▶'}</span>
+                                  </div>
                                 </div>
-                              )}
 
-                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                                {visibleFotos.map(foto => {
-                                  const tagsOnFoto = fotoTags.filter(t => t.foto_id === foto.id);
-                                  const myTag = tagsOnFoto.find(t => t.user_id === session.user.id);
+                                {isExpanded && (
+                                  <div className="p-4 border-t border-gray-800 bg-gray-950/30">
+                                    {isMediaOrAdmin && (
+                                      <div className="mb-4">
+                                        <label className="bg-gray-800 hover:bg-gray-700 text-gray-300 px-4 py-2 rounded-xl text-sm font-bold cursor-pointer transition-colors border border-gray-700 inline-block">
+                                          📸 + Foto hier hochladen
+                                          <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFotoUploadForAlbum(e, album.id)} />
+                                        </label>
+                                      </div>
+                                    )}
 
-                                  return (
-                                    <div key={foto.id} className="bg-gray-950 border border-gray-800 rounded-xl overflow-hidden shadow flex flex-col">
-                                      <a href={foto.file_url} target="_blank" rel="noopener noreferrer" className="block h-40 bg-black relative group">
-                                        <img src={foto.file_url} alt="Band Foto" className="w-full h-full object-cover" />
-                                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white font-bold backdrop-blur-sm">
-                                          🔍 Vollbild
-                                        </div>
-                                      </a>
-                                      
-                                      <div className="p-3 flex flex-col flex-1">
-                                        
-                                        {/* Status für Musiker & Admins */}
-                                        {myProfile?.app_rolle !== 'Media' && myTag && (
-                                          <div className="mb-3 space-y-2">
-                                            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest text-center mb-1">Social Media Freigabe:</p>
-                                            <div className="flex gap-2">
-                                              <button onClick={() => handleSetTagStatus(myTag.id, 'freigegeben')} className={`flex-1 py-1.5 rounded-lg text-sm font-bold transition-colors ${myTag.status === 'freigegeben' ? 'bg-emerald-500 text-gray-950 shadow-md shadow-emerald-500/20' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20'}`}>✅ Approve</button>
-                                              <button onClick={() => handleSetTagStatus(myTag.id, 'abgelehnt')} className={`flex-1 py-1.5 rounded-lg text-sm font-bold transition-colors ${myTag.status === 'abgelehnt' ? 'bg-red-500 text-gray-950 shadow-md shadow-red-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20'}`}>🚫 No approve</button>
-                                            </div>
-                                          </div>
-                                        )}
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                      {visibleFotos.map(foto => {
+                                        const tagsOnFoto = fotoTags.filter(t => t.foto_id === foto.id);
+                                        const myTag = tagsOnFoto.find(t => t.user_id === session.user.id);
 
-                                        {/* Ansicht für Media/Admin */}
-                                        {isMediaOrAdmin && (
-                                          <div className="flex-1 flex flex-col">
-                                            <div className="flex-1">
-                                              <h4 className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-1.5 border-b border-gray-800 pb-1">Markierte Personen</h4>
-                                              {tagsOnFoto.length === 0 ? (
-                                                <p className="text-[12px] text-gray-600 italic">Niemand markiert.</p>
-                                              ) : (
-                                                <div className="space-y-1 mb-3">
-                                                  {tagsOnFoto.map(t => {
-                                                    const u = allProfiles.find(p => p.id === t.user_id);
-                                                    return (
-                                                      <div key={t.id} className="flex items-center justify-between bg-gray-900 px-2 py-1 rounded text-[12px]">
-                                                        <span className="text-gray-300 font-bold">{u ? getDisplayName(u.full_name) : 'User'}</span>
-                                                        <span>
-                                                          {t.status === 'freigegeben' && <span className="text-emerald-400 font-bold">🟢 OK</span>}
-                                                          {t.status === 'abgelehnt' && <span className="text-red-400 font-bold">🔴 Nein</span>}
-                                                          {t.status === 'offen' && <span className="text-amber-400 font-bold">🟡 Wartet</span>}
-                                                        </span>
-                                                      </div>
-                                                    );
-                                                  })}
+                                        return (
+                                          <div key={foto.id} className="bg-gray-950 border border-gray-800 rounded-xl overflow-hidden shadow flex flex-col">
+                                            <a href={foto.file_url} target="_blank" rel="noopener noreferrer" className="block h-40 bg-black relative group">
+                                              <img src={foto.file_url} alt="Band Foto" className="w-full h-full object-cover" />
+                                              <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white font-bold backdrop-blur-sm">
+                                                🔍 Vollbild
+                                              </div>
+                                            </a>
+                                            
+                                            <div className="p-3 flex flex-col flex-1">
+                                              
+                                              {/* Status für Musiker & Admins */}
+                                              {myProfile?.app_rolle !== 'Media' && myTag && (
+                                                <div className="mb-3 space-y-2">
+                                                  <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest text-center mb-1">Social Media Freigabe:</p>
+                                                  <div className="flex gap-2">
+                                                    <button onClick={() => handleSetTagStatus(myTag.id, 'freigegeben')} className={`flex-1 py-1.5 rounded-lg text-sm font-bold transition-colors ${myTag.status === 'freigegeben' ? 'bg-emerald-500 text-gray-950 shadow-md shadow-emerald-500/20' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20'}`}>✅ Approve</button>
+                                                    <button onClick={() => handleSetTagStatus(myTag.id, 'abgelehnt')} className={`flex-1 py-1.5 rounded-lg text-sm font-bold transition-colors ${myTag.status === 'abgelehnt' ? 'bg-red-500 text-gray-950 shadow-md shadow-red-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20'}`}>🚫 No approve</button>
+                                                  </div>
                                                 </div>
                                               )}
+
+                                              {/* Ansicht für Media/Admin */}
+                                              {isMediaOrAdmin && (
+                                                <div className="flex-1 flex flex-col">
+                                                  <div className="flex-1">
+                                                    <h4 className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-1.5 border-b border-gray-800 pb-1">Markierte Personen</h4>
+                                                    {tagsOnFoto.length === 0 ? (
+                                                      <p className="text-[12px] text-gray-600 italic">Niemand markiert.</p>
+                                                    ) : (
+                                                      <div className="space-y-1 mb-3">
+                                                        {tagsOnFoto.map(t => {
+                                                          const u = allProfiles.find(p => p.id === t.user_id);
+                                                          return (
+                                                            <div key={t.id} className="flex items-center justify-between bg-gray-900 px-2 py-1.5 rounded text-[12px]">
+                                                              <span className="text-gray-300 font-bold">{u ? getDisplayName(u.full_name) : 'User'}</span>
+                                                              <div className="flex items-center gap-2">
+                                                                <span>
+                                                                  {t.status === 'freigegeben' && <span className="text-emerald-400 font-bold">🟢 OK</span>}
+                                                                  {t.status === 'abgelehnt' && <span className="text-red-400 font-bold">🔴 Nein</span>}
+                                                                  {t.status === 'offen' && <span className="text-amber-400 font-bold">🟡 Wartet</span>}
+                                                                </span>
+                                                                <button onClick={() => handleRemoveTag(t.id)} className="text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded px-1.5 py-0.5 transition-colors" title="Markierung entfernen">
+                                                                  ✕
+                                                                </button>
+                                                              </div>
+                                                            </div>
+                                                          );
+                                                        })}
+                                                      </div>
+                                                    )}
+                                                  </div>
+                                                  
+                                                  <select onChange={(e) => { handleTagUser(foto.id, e.target.value); e.target.value = ''; }} defaultValue="" className="w-full bg-gray-900 border border-gray-700 text-gray-300 text-[12px] font-bold rounded-lg px-2 py-1.5 focus:outline-none mb-2">
+                                                    <option value="" disabled>+ Person markieren...</option>
+                                                    {allProfiles.filter(p => !tagsOnFoto.some(t => t.user_id === p.id)).map(p => (
+                                                      <option key={p.id} value={p.id}>{p.full_name}</option>
+                                                    ))}
+                                                  </select>
+
+                                                  <button onClick={() => handleDeleteFoto(foto.id, foto.file_name)} className="w-full bg-red-500/10 text-red-400 border border-red-500/20 py-1.5 rounded-lg text-[12px] font-bold hover:bg-red-500/20 transition-colors">
+                                                    🗑️ Foto löschen
+                                                  </button>
+                                                </div>
+                                              )}
+
                                             </div>
-                                            
-                                            <select onChange={(e) => { handleTagUser(foto.id, e.target.value); e.target.value = ''; }} defaultValue="" className="w-full bg-gray-900 border border-gray-700 text-gray-300 text-[12px] font-bold rounded-lg px-2 py-1.5 focus:outline-none mb-2">
-                                              <option value="" disabled>+ Person markieren...</option>
-                                              {allProfiles.filter(p => !tagsOnFoto.some(t => t.user_id === p.id)).map(p => (
-                                                <option key={p.id} value={p.id}>{p.full_name}</option>
-                                              ))}
-                                            </select>
-
-                                            <button onClick={() => handleDeleteFoto(foto.id, foto.file_name)} className="w-full bg-red-500/10 text-red-400 border border-red-500/20 py-1.5 rounded-lg text-[12px] font-bold hover:bg-red-500/20 transition-colors">
-                                              🗑️ Foto löschen
-                                            </button>
                                           </div>
-                                        )}
-
-                                      </div>
+                                        );
+                                      })}
+                                      {visibleFotos.length === 0 && isMediaOrAdmin && (
+                                        <p className="text-sm text-gray-500 italic col-span-full">In diesem Album sind noch keine Fotos.</p>
+                                      )}
                                     </div>
-                                  );
-                                })}
-                                {visibleFotos.length === 0 && isMediaOrAdmin && (
-                                  <p className="text-sm text-gray-500 italic">In diesem Album sind noch keine Fotos.</p>
+                                  </div>
                                 )}
                               </div>
-                            </div>
-                          )}
+                            );
+                          })}
                         </div>
-                      );
-                    })}
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
