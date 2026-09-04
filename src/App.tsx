@@ -704,12 +704,17 @@ export default function App() {
     if (tags) setFotoTags(tags);
   };
 
-  const handleCreateFotoAlbum = async () => {
-    const title = window.prompt('Name des Termins/Shootings? (z.B. Stadtfest Gig)');
-    if (!title) return;
-    const date = window.prompt('Datum? (YYYY-MM-DD)', getTodayString());
-    if (!date) return;
-    await supabase.from('foto_alben').insert([{ title, event_date: date }]);
+  const [isAddingFotoAlbum, setIsAddingFotoAlbum] = useState(false);
+  const [newAlbumTitle, setNewAlbumTitle] = useState('');
+  const [newAlbumDate, setNewAlbumDate] = useState(getTodayString());
+
+  const handleCreateFotoAlbum = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newAlbumTitle.trim() || !newAlbumDate) return;
+    await supabase.from('foto_alben').insert([{ title: newAlbumTitle, event_date: newAlbumDate }]);
+    setIsAddingFotoAlbum(false);
+    setNewAlbumTitle('');
+    setNewAlbumDate(getTodayString());
     fetchFotoData();
   };
 
@@ -2532,120 +2537,140 @@ export default function App() {
           {currentView === 'termine' && !planningSetlistEvent && !planningSetlistTemplate && (
             <div className="space-y-6">
               <div className="flex justify-between items-center">
-                <h2 className="text-lg font-bold text-gray-300">{editingEventId ? '✏️ Termin bearbeiten' : 'Terminübersicht'}</h2>
-                <button onClick={() => { if (isAddingEvent) resetForm(); else loadDefaultsAndOpenForm(); }} className="bg-amber-500 hover:bg-amber-600 text-gray-950 text-sm font-bold px-3 py-2 rounded-xl transition-transform active:scale-95">
-                  {isAddingEvent ? 'Schließen' : '+ Termin planen'}
+                <h2 className="text-lg font-bold text-gray-300">Terminübersicht</h2>
+                <button onClick={loadDefaultsAndOpenForm} className="bg-amber-500 hover:bg-amber-600 text-gray-950 text-sm font-bold px-3 py-2 rounded-xl transition-transform active:scale-95 shadow-lg">
+                  + Termin planen
                 </button>
               </div>
 
               {isAddingEvent && (
-                <form onSubmit={handleSaveEvent} className="bg-gray-900/90 border border-amber-500/20 p-5 rounded-2xl space-y-4 shadow-lg">
-                  <datalist id="saved-titles">
-                    {uniqueTitles.map((title, idx) => <option key={idx} value={title as string} />)}
-                  </datalist>
-                  <datalist id="saved-locations">
-                    {uniqueLocations.map((loc, idx) => <option key={idx} value={loc as string} />)}
-                  </datalist>
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                  <div className="bg-gray-900 border border-amber-500/30 w-full max-w-2xl max-h-[90dvh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+                    
+                    <div className="flex justify-between items-center border-b border-gray-800 p-4 sm:p-5 shrink-0 bg-gray-950">
+                      <h3 className="text-lg sm:text-xl font-black text-amber-500 uppercase tracking-wider">
+                        {editingEventId ? '✏️ Termin bearbeiten' : '➕ Termin planen'}
+                      </h3>
+                      <button type="button" onClick={resetForm} className="p-1.5 bg-gray-900 border border-gray-800 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white transition-colors text-sm font-bold px-3 py-1.5 shrink-0">
+                        Schließen
+                      </button>
+                    </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Typ</label>
-                      <select value={eventType} onChange={(e: any) => setEventType(e.target.value)} className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500">
-                        <option value="Probe">🎵 Probe</option>
-                        <option value="Auftritt">🎤 Auftritt</option>
-                        <option value="Band-Event">🎸 Band-Event</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Titel / Name</label>
-                      <input type="text" list="saved-titles" value={eventTitle} onChange={(e) => setEventTitle(e.target.value)} placeholder="z.B. Probe im Bunker" className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500" required />
-                    </div>
-                    <div>
-                      <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Datum</label>
-                      <input type="date" value={eventDate} onChange={(e) => setEventDate(e.target.value)} className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500" required />
-                    </div>
-                    <div>
-                      <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Uhrzeit Beginn</label>
-                      <input type="time" value={eventTime} onChange={(e) => setEventTime(e.target.value)} className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500" required />
-                    </div>
-                  </div>
+                    <div className="flex-1 overflow-y-auto p-4 sm:p-6 custom-scrollbar">
+                      <form onSubmit={handleSaveEvent} className="space-y-5">
+                        <datalist id="saved-titles">
+                          {uniqueTitles.map((title, idx) => <option key={idx} value={title as string} />)}
+                        </datalist>
+                        <datalist id="saved-locations">
+                          {uniqueLocations.map((loc, idx) => <option key={idx} value={loc as string} />)}
+                        </datalist>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Location</label>
-                      <input type="text" list="saved-locations" value={eventLocation} onChange={(e) => setEventLocation(e.target.value)} placeholder="Adresse oder Location-Name" className="w-full bg-gray-950 border border-gray-800 rounded-xl px-4 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500" />
-                    </div>
-                    <div>
-                      <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Google Maps Link (optional)</label>
-                      <input type="url" value={eventMapsLink} onChange={(e) => setEventMapsLink(e.target.value)} placeholder="https://maps.app.goo.gl/..." className="w-full bg-gray-950 border border-gray-800 rounded-xl px-4 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500" />
-                    </div>
-                  </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Typ</label>
+                            <select value={eventType} onChange={(e: any) => setEventType(e.target.value)} className="w-full bg-gray-950 border border-gray-800 rounded-xl px-4 py-3 text-[16px] text-white focus:outline-none focus:border-amber-500 shadow-inner">
+                              <option value="Probe">🎵 Probe</option>
+                              <option value="Auftritt">🎤 Auftritt</option>
+                              <option value="Band-Event">🎸 Band-Event</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Titel / Name</label>
+                            <input type="text" list="saved-titles" value={eventTitle} onChange={(e) => setEventTitle(e.target.value)} placeholder="z.B. Probe im Bunker" className="w-full bg-gray-950 border border-gray-800 rounded-xl px-4 py-3 text-[16px] text-white focus:outline-none focus:border-amber-500 shadow-inner" required />
+                          </div>
+                          <div>
+                            <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Datum</label>
+                            <input type="date" value={eventDate} onChange={(e) => setEventDate(e.target.value)} className="w-full bg-gray-950 border border-gray-800 rounded-xl px-4 py-3 text-[16px] text-white focus:outline-none focus:border-amber-500 shadow-inner" required />
+                          </div>
+                          <div>
+                            <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Uhrzeit Beginn</label>
+                            <input type="time" value={eventTime} onChange={(e) => setEventTime(e.target.value)} className="w-full bg-gray-950 border border-gray-800 rounded-xl px-4 py-3 text-[16px] text-white focus:outline-none focus:border-amber-500 shadow-inner" required />
+                          </div>
+                        </div>
 
-                  {eventType === 'Auftritt' && (
-                    <div className="bg-purple-950/20 border border-purple-900/30 p-4 rounded-xl space-y-4">
-                      <h4 className="text-[12px] font-black text-purple-400 uppercase tracking-widest">🎤 Auftritts-Details</h4>
-                      
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Status</label>
-                          <select value={eventGigStatus} onChange={(e: any) => setEventGigStatus(e.target.value)} className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500">
-                            <option value="Steht fest">🟢 Steht fest / Gebucht</option>
-                            <option value="Angebot">🟡 Nur Angebot / Angefragt</option>
-                            <option value="Abgesagt">🔴 Abgesagt</option>
-                          </select>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Location</label>
+                            <input type="text" list="saved-locations" value={eventLocation} onChange={(e) => setEventLocation(e.target.value)} placeholder="Adresse oder Location-Name" className="w-full bg-gray-950 border border-gray-800 rounded-xl px-4 py-3 text-[16px] text-white focus:outline-none focus:border-amber-500 shadow-inner" />
+                          </div>
+                          <div>
+                            <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Google Maps Link (optional)</label>
+                            <input type="url" value={eventMapsLink} onChange={(e) => setEventMapsLink(e.target.value)} placeholder="https://maps.app.goo.gl/..." className="w-full bg-gray-950 border border-gray-800 rounded-xl px-4 py-3 text-[16px] text-white focus:outline-none focus:border-amber-500 shadow-inner" />
+                          </div>
                         </div>
-                        <div>
-                          <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Gage (€)</label>
-                          <input type="number" step="0.01" value={eventGage} onChange={(e) => setEventGage(e.target.value)} placeholder="z.B. 500" className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500 font-mono" />
-                        </div>
-                        <div className="sm:col-span-2">
-                          <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Spielzeit (Stunden, z.B. 2.5)</label>
-                          <input type="number" step="0.1" value={eventPlayTime} onChange={(e) => setEventPlayTime(e.target.value)} placeholder="z.B. 2.5" className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500 font-mono" />
-                        </div>
-                      </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        <div>
-                          <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Soundcheck</label>
-                          <input type="time" value={eventSoundcheck} onChange={(e) => setEventSoundcheck(e.target.value)} className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500" />
-                        </div>
-                        <div>
-                          <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Spielbeginn</label>
-                          <input type="time" value={eventPlayTimeStart} onChange={(e) => setEventPlayTimeStart(e.target.value)} className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500" />
-                        </div>
-                        <div>
-                          <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Spielende</label>
-                          <input type="time" value={eventPlayTimeEnd} onChange={(e) => setEventPlayTimeEnd(e.target.value)} className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500" />
-                        </div>
-                      </div>
+                        {eventType === 'Auftritt' && (
+                          <div className="bg-purple-950/20 border border-purple-900/30 p-5 rounded-2xl space-y-5">
+                            <h4 className="text-[12px] font-black text-purple-400 uppercase tracking-widest border-b border-purple-900/30 pb-2">🎤 Auftritts-Details</h4>
+                            
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Status</label>
+                                <select value={eventGigStatus} onChange={(e: any) => setEventGigStatus(e.target.value)} className="w-full bg-gray-950 border border-gray-800 rounded-xl px-4 py-3 text-[16px] text-white focus:outline-none focus:border-amber-500 shadow-inner">
+                                  <option value="Steht fest">🟢 Steht fest / Gebucht</option>
+                                  <option value="Angebot">🟡 Nur Angebot / Angefragt</option>
+                                  <option value="Abgesagt">🔴 Abgesagt</option>
+                                </select>
+                              </div>
+                              <div>
+                                <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Gage (€)</label>
+                                <input type="number" step="0.01" value={eventGage} onChange={(e) => setEventGage(e.target.value)} placeholder="z.B. 500" className="w-full bg-gray-950 border border-gray-800 rounded-xl px-4 py-3 text-[16px] text-white focus:outline-none focus:border-amber-500 font-mono shadow-inner" />
+                              </div>
+                              <div className="sm:col-span-2">
+                                <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Spielzeit (Stunden, z.B. 2.5)</label>
+                                <input type="number" step="0.1" value={eventPlayTime} onChange={(e) => setEventPlayTime(e.target.value)} placeholder="z.B. 2.5" className="w-full bg-gray-950 border border-gray-800 rounded-xl px-4 py-3 text-[16px] text-white focus:outline-none focus:border-amber-500 font-mono shadow-inner" />
+                              </div>
+                            </div>
 
-                      <div className="space-y-3 pt-2 border-t border-purple-900/30">
-                        <label className="block text-[12px] text-amber-400 font-bold uppercase pt-2">📜 Anhang für den Auftritt (Bild oder PDF)</label>
-                        <div className="flex gap-2 items-center flex-wrap">
-                          <input type="file" accept="image/*,application/pdf" onChange={handleSetlistImageUpload} className="text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-bold file:bg-amber-500 file:text-gray-950 hover:file:bg-amber-600 cursor-pointer" />
-                        </div>
-                        {eventSetlistImage && (
-                          <div className="flex items-center gap-3 bg-gray-950 p-2.5 rounded-xl border border-gray-800 w-fit">
-                            <span className="text-xs text-amber-400 font-bold truncate max-w-[200px]">Datei hinterlegt</span>
-                            <button type="button" onClick={() => { setEventSetlistImage(''); setSetlistFile(null); }} className="text-red-400 text-xs font-bold hover:underline">Löschen</button>
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                              <div>
+                                <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Soundcheck</label>
+                                <input type="time" value={eventSoundcheck} onChange={(e) => setEventSoundcheck(e.target.value)} className="w-full bg-gray-950 border border-gray-800 rounded-xl px-4 py-3 text-[16px] text-white focus:outline-none focus:border-amber-500 shadow-inner" />
+                              </div>
+                              <div>
+                                <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Spielbeginn</label>
+                                <input type="time" value={eventPlayTimeStart} onChange={(e) => setEventPlayTimeStart(e.target.value)} className="w-full bg-gray-950 border border-gray-800 rounded-xl px-4 py-3 text-[16px] text-white focus:outline-none focus:border-amber-500 shadow-inner" />
+                              </div>
+                              <div>
+                                <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Spielende</label>
+                                <input type="time" value={eventPlayTimeEnd} onChange={(e) => setEventPlayTimeEnd(e.target.value)} className="w-full bg-gray-950 border border-gray-800 rounded-xl px-4 py-3 text-[16px] text-white focus:outline-none focus:border-amber-500 shadow-inner" />
+                              </div>
+                            </div>
+
+                            <div className="space-y-3 pt-4 border-t border-purple-900/30">
+                              <label className="block text-[12px] text-amber-400 font-bold uppercase mb-1">📜 Anhang für den Auftritt (Bild oder PDF)</label>
+                              <div className="flex gap-2 items-center flex-wrap">
+                                <input type="file" accept="image/*,application/pdf" onChange={handleSetlistImageUpload} className="text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-bold file:bg-amber-500 file:text-gray-950 hover:file:bg-amber-600 cursor-pointer transition-colors" />
+                              </div>
+                              {eventSetlistImage && (
+                                <div className="flex items-center gap-3 bg-gray-950 p-3 rounded-xl border border-gray-800 w-fit mt-2">
+                                  <span className="text-xs text-amber-400 font-bold truncate max-w-[200px]">Datei hinterlegt</span>
+                                  <button type="button" onClick={() => { setEventSetlistImage(''); setSetlistFile(null); }} className="text-red-400 text-xs font-bold hover:text-red-300 transition-colors">Löschen</button>
+                                </div>
+                              )}
+                            </div>
                           </div>
                         )}
-                      </div>
+
+                        <div>
+                          <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Zusätzliche Infos</label>
+                          <textarea value={eventDescription} onChange={(e) => setEventDescription(e.target.value)} placeholder="Infos für die Band..." rows={3} className="w-full bg-gray-950 border border-gray-800 rounded-xl px-4 py-3 text-[16px] text-white focus:outline-none focus:border-amber-500 resize-none shadow-inner" />
+                        </div>
+                        
+                        <div className="flex items-center gap-3 bg-gray-950 p-4 rounded-xl border border-gray-800">
+                          <input type="checkbox" id="saveDefaultToggle" checked={saveAsDefault} onChange={(e) => setSaveAsDefault(e.target.checked)} className="w-5 h-5 accent-amber-500 bg-gray-800 border-gray-700 rounded cursor-pointer" />
+                          <label htmlFor="saveDefaultToggle" className="text-sm font-bold text-gray-300 cursor-pointer select-none">Ort, Uhrzeit & Typ als Standard für neue Termine merken</label>
+                        </div>
+
+                        <div className="pt-4 sticky bottom-0 bg-gray-900 pb-2">
+                          <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-lg rounded-xl py-3.5 transition-colors shadow-lg shadow-emerald-600/20">
+                            {editingEventId ? '💾 Änderungen speichern' : '🚀 Termin live veröffentlichen'}
+                          </button>
+                        </div>
+                      </form>
                     </div>
-                  )}
-
-                  <div>
-                    <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Zusätzliche Infos</label>
-                    <textarea value={eventDescription} onChange={(e) => setEventDescription(e.target.value)} placeholder="Infos für die Band..." rows={2} className="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-[16px] text-white focus:outline-none focus:border-amber-500 resize-none" />
                   </div>
-                  
-                  <div className="flex items-center gap-3 bg-gray-950 p-3 rounded-xl border border-gray-800">
-                    <input type="checkbox" id="saveDefaultToggle" checked={saveAsDefault} onChange={(e) => setSaveAsDefault(e.target.checked)} className="w-4 h-4 accent-amber-500 bg-gray-800 border-gray-700 rounded cursor-pointer" />
-                    <label htmlFor="saveDefaultToggle" className="text-sm font-bold text-gray-300 cursor-pointer select-none">Ort, Uhrzeit & Typ als Standard für neue Termine merken</label>
-                  </div>
-
-                  <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[16px] rounded-xl py-2.5 transition-colors">{editingEventId ? 'Änderungen speichern' : 'Termin live veröffentlichen'}</button>
-                </form>
+                </div>
               )}
 
               <div className="relative bg-gray-900/80 p-1 rounded-xl flex border border-gray-800/60 max-w-xl">
@@ -2874,11 +2899,30 @@ export default function App() {
                     <p className="text-sm text-gray-400">{isMediaOrAdmin ? 'Shooting-Alben verwalten & Leute markieren.' : 'Gib Bilder frei, auf denen du zu sehen bist.'}</p>
                   </div>
                   {isMediaOrAdmin && (
-                    <button onClick={handleCreateFotoAlbum} className="bg-pink-600 hover:bg-pink-700 text-white text-sm font-bold px-4 py-2 rounded-xl shadow-lg transition-colors">
-                      + Neues Album anlegen
+                    <button onClick={() => { setIsAddingFotoAlbum(!isAddingFotoAlbum); setNewAlbumDate(getTodayString()); }} className="bg-pink-600 hover:bg-pink-700 text-white text-sm font-bold px-4 py-2 rounded-xl shadow-lg transition-colors">
+                      {isAddingFotoAlbum ? 'Abbrechen' : '+ Neues Album anlegen'}
                     </button>
                   )}
                 </div>
+
+                {isAddingFotoAlbum && isMediaOrAdmin && (
+                  <form onSubmit={handleCreateFotoAlbum} className="bg-gray-900/90 border border-pink-500/30 p-5 rounded-2xl space-y-4 shadow-lg mb-6">
+                    <h3 className="text-sm font-bold text-pink-400 uppercase tracking-wider mb-2">📸 Neues Foto-Album erstellen</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Name des Termins/Shootings</label>
+                        <input type="text" value={newAlbumTitle} onChange={(e) => setNewAlbumTitle(e.target.value)} placeholder="z.B. Stadtfest Gig" className="w-full bg-gray-950 border border-gray-800 rounded-xl px-4 py-3 text-[16px] text-white focus:outline-none focus:border-pink-500 shadow-inner" required />
+                      </div>
+                      <div>
+                        <label className="block text-[12px] text-gray-400 font-bold uppercase mb-1">Datum</label>
+                        <input type="date" value={newAlbumDate} onChange={(e) => setNewAlbumDate(e.target.value)} className="w-full bg-gray-950 border border-gray-800 rounded-xl px-4 py-3 text-[16px] text-white focus:outline-none focus:border-pink-500 shadow-inner" required />
+                      </div>
+                    </div>
+                    <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[16px] rounded-xl py-3 mt-2 transition-colors">
+                      Album speichern
+                    </button>
+                  </form>
+                )}
 
                 {fotoAlben.length === 0 ? (
                   <div className="bg-gray-900/60 border border-gray-800 p-8 rounded-2xl text-center">
