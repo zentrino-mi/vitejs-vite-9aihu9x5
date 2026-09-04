@@ -752,22 +752,18 @@ export default function App() {
     const file = e.target.files?.[0];
     if (!file) return;
     
-    // Dateiendung herausfinden (z.B. "pdf" oder "zip")
     const fileExt = file.name.split('.').pop();
     const exactFileName = `${fixedName}.${fileExt}`;
 
-    // 1. In Supabase Storage hochladen und IMMER überschreiben (upsert: true)
     const { error: uploadError } = await supabase.storage
       .from('band_files')
       .upload(exactFileName, file, { upsert: true });
 
     if (uploadError) return alert('Fehler beim Upload: ' + uploadError.message);
 
-    // 2. Die öffentliche URL holen
     const { data } = supabase.storage.from('band_files').getPublicUrl(exactFileName);
     const cacheBusterUrl = `${data.publicUrl}?t=${Date.now()}`;
 
-    // 3. Auch in der Datenbank speichern/updaten, damit wir es in der App sehen
     const displayTitle = fixedName.replace('_', ' ');
     const { data: existingData } = await supabase.from('band_files').select('id').eq('title', displayTitle).single();
 
@@ -783,7 +779,7 @@ export default function App() {
     }
     
     fetchBandFiles();
-    e.target.value = ''; // Input zurücksetzen
+    e.target.value = '';
   };
   const handleFileUploadSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1922,13 +1918,13 @@ export default function App() {
                 </form>
               )}
 {/* --- VIP BEREICH FÜR FESTE DATEIEN --- */}
-<div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+<div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
                 
                 {/* Kachel: Tech Rider */}
                 <div className="bg-purple-950/20 border border-purple-500/30 p-5 rounded-2xl flex flex-col justify-between shadow-lg">
                   <div>
                     <h3 className="text-[16px] font-black text-purple-400 uppercase tracking-wider mb-1">Tech Rider</h3>
-                    <p className="text-[12px] text-gray-400">Fester Link für Veranstalter & Webseite</p>
+                    <p className="text-[12px] text-gray-400">Fester Link für Veranstalter</p>
                   </div>
                   <div className="mt-4 flex gap-2">
                     {bandFiles.find(f => f.title === 'Tech Rider') ? (
@@ -1943,11 +1939,30 @@ export default function App() {
                   </div>
                 </div>
 
+                {/* Kachel: Presse Kit */}
+                <div className="bg-blue-950/20 border border-blue-500/30 p-5 rounded-2xl flex flex-col justify-between shadow-lg">
+                  <div>
+                    <h3 className="text-[16px] font-black text-blue-400 uppercase tracking-wider mb-1">Presse Kit</h3>
+                    <p className="text-[12px] text-gray-400">Fotos & Bio für Veranstalter</p>
+                  </div>
+                  <div className="mt-4 flex gap-2">
+                    {bandFiles.find(f => f.title === 'Presse Kit') ? (
+                      <a href={bandFiles.find(f => f.title === 'Presse Kit')?.file_url} target="_blank" rel="noopener noreferrer" className="bg-blue-500/10 text-blue-400 border border-blue-500/30 px-3 py-2 rounded-xl text-sm font-bold hover:bg-blue-500/20 text-center flex-1">Laden</a>
+                    ) : (
+                      <span className="text-gray-600 italic text-sm flex-1 py-2 text-center border border-dashed border-gray-800 rounded-xl">Fehlt noch</span>
+                    )}
+                    <label className="bg-gray-800 hover:bg-gray-700 text-gray-300 px-3 py-2 rounded-xl text-sm font-bold cursor-pointer transition-colors border border-gray-700 text-center">
+                      🔄 Update
+                      <input type="file" accept=".zip,.pdf,.jpg,.png" className="hidden" onChange={(e) => handleFixedFileUpload(e, 'Presse_Kit')} />
+                    </label>
+                  </div>
+                </div>
+
                 {/* Kachel: Band Logos */}
                 <div className="bg-amber-950/20 border border-amber-500/30 p-5 rounded-2xl flex flex-col justify-between shadow-lg">
                   <div>
                     <h3 className="text-[16px] font-black text-amber-500 uppercase tracking-wider mb-1">Band Logos</h3>
-                    <p className="text-[12px] text-gray-400">Festes Archiv für Plakate & Webseite</p>
+                    <p className="text-[12px] text-gray-400">Festes Archiv für Plakate</p>
                   </div>
                   <div className="mt-4 flex gap-2">
                     {bandFiles.find(f => f.title === 'Band Logos') ? (
