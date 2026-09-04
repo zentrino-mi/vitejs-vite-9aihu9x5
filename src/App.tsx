@@ -126,7 +126,7 @@ export default function App() {
 
   const [pushPermission, setPushPermission] = useState<NotificationPermission | 'default'>('default');
 
-  const [currentView, setCurrentView] = useState<'dashboard' | 'termine' | 'kalender' | 'verwaltung' | 'bandkasse' | 'songs' | 'setlisten' | 'dateien' | 'kontakte'>('dashboard');
+  const [currentView, setCurrentView] = useState<'dashboard' | 'termine' | 'kalender' | 'verwaltung' | 'bandkasse' | 'songs' | 'setlisten' | 'dateien' | 'kontakte' | 'fotos'>('dashboard');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [activeFilter, setActiveFilter] = useState<'all' | 'Probe' | 'Auftritt' | 'Band-Event'>('all');
 
@@ -477,6 +477,7 @@ export default function App() {
       fetchSongs(),
       fetchSetlists(), 
       fetchBandFiles(), 
+      fetchFotoData(),
       fetchFundBalance(),
       fetchTransactions(),
       fetchMyNotes(),
@@ -687,6 +688,62 @@ export default function App() {
   const fetchBandFiles = async () => {
     const { data } = await supabase.from('band_files').select('*').order('created_at', { ascending: false });
     if (data) setBandFiles(data);
+  };
+
+  const [fotoAlben, setFotoAlben] = useState<any[]>([]);
+  const [bandFotos, setBandFotos] = useState<any[]>([]);
+  const [fotoTags, setFotoTags] = useState<any[]>([]);
+  const [expandedAlbumId, setExpandedAlbumId] = useState<string | null>(null);
+
+  const fetchFotoData = async () => {
+    const { data: alben } = await supabase.from('foto_alben').select('*').order('event_date', { ascending: false });
+    if (alben) setFotoAlben(alben);
+    const { data: fotos } = await supabase.from('band_fotos').select('*');
+    if (fotos) setBandFotos(fotos);
+    const { data: tags } = await supabase.from('foto_tags').select('*');
+    if (tags) setFotoTags(tags);
+  };
+
+  const handleCreateFotoAlbum = async () => {
+    const title = window.prompt('Name des Termins/Shootings? (z.B. Stadtfest Gig)');
+    if (!title) return;
+    const date = window.prompt('Datum? (YYYY-MM-DD)', getTodayString());
+    if (!date) return;
+    await supabase.from('foto_alben').insert([{ title, event_date: date }]);
+    fetchFotoData();
+  };
+
+  const handleFotoUploadForAlbum = async (e: React.ChangeEvent<HTMLInputElement>, albumId: string) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 9)}.${fileExt}`;
+    const { error } = await supabase.storage.from('band_fotos').upload(fileName, file);
+    if (error) return alert('Fehler: ' + error.message);
+    const { data } = supabase.storage.from('band_fotos').getPublicUrl(fileName);
+    await supabase.from('band_fotos').insert([{ album_id: albumId, file_url: data.publicUrl, file_name: fileName }]);
+    fetchFotoData();
+  };
+
+  const handleTagUser = async (fotoId: string, userId: string) => {
+    if (!userId) return;
+    const existing = fotoTags.find(t => t.foto_id === fotoId && t.user_id === userId);
+    if (existing) return alert('Person ist schon auf dem Bild markiert!');
+    await supabase.from('foto_tags').insert([{ foto_id: fotoId, user_id: userId, status: 'offen' }]);
+    fetchFotoData();
+  };
+
+  const handleSetTagStatus = async (tagId: string, status: 'freigegeben' | 'abgelehnt') => {
+    await supabase.from('foto_tags').update({ status }).eq('id', tagId);
+    fetchFotoData();
+  };
+
+  const handleDeleteFoto = async (fotoId: string, fileName: string) => {
+    if (!confirm('Foto wirklich löschen? Alle Markierungen verschwinden mit.')) return;
+    await supabase.storage.from('band_fotos').remove([fileName]);
+    await supabase.from('foto_tags').delete().eq('foto_id', fotoId);
+    await supabase.from('band_fotos').delete().eq('id', fotoId);
+    fetchFotoData();
   };
 
   const fetchFundBalance = async () => {
@@ -1653,30 +1710,67 @@ export default function App() {
           </div>
 
           {isMenuOpen && (
-            <div className="fixed inset-0 bg-gray-950/98 backdrop-blur-xl z-40 flex flex-col items-center justify-center space-y-6">
-              {pushPermission !== 'granted' && (
-                <button onClick={requestNotificationPermission} className="text-[16px] font-bold text-emerald-400 bg-emerald-500/10 px-5 py-3 rounded-2xl border border-emerald-500/30 animate-pulse active:scale-95 transition-transform mb-4">
-                  🔔 Push-Mitteilungen erlauben
-                </button>
-              )}
-              <button onClick={() => navigateTo('dashboard')} className={`text-2xl font-bold ${currentView === 'dashboard' ? 'text-amber-500' : 'text-gray-500'}`}>🏠 Startseite</button>
-              <button onClick={() => navigateTo('termine')} className={`text-2xl font-bold ${currentView === 'termine' ? 'text-amber-500' : 'text-gray-500'}`}>📅 Termine</button>
-              {myProfile?.app_rolle !== 'Techniker' && <button onClick={() => navigateTo('songs')} className={`text-2xl font-bold ${currentView === 'songs' ? 'text-amber-500' : 'text-gray-500'}`}>🎵 Songs</button>}
-              <button onClick={() => navigateTo('setlisten')} className={`text-2xl font-bold ${currentView === 'setlisten' ? 'text-amber-500' : 'text-gray-500'}`}>📋 Setlisten</button>
-              <button onClick={() => navigateTo('dateien')} className={`text-2xl font-bold ${currentView === 'dateien' ? 'text-amber-500' : 'text-gray-500'}`}>📁 Dateien</button>
-              {(myProfile?.is_admin || myProfile?.can_view_contacts) && (
-                <button onClick={() => { navigateTo('kontakte'); fetchCrmData(); }} className={`text-2xl font-bold ${currentView === 'kontakte' ? 'text-amber-500' : 'text-gray-500'}`}>📇 Kontakte</button>
-              )}
-              {myProfile?.app_rolle !== 'Techniker' && <button onClick={() => { navigateTo('kalender'); loadAbsenceFormDefaults(); }} className={`text-2xl font-bold ${currentView === 'kalender' ? 'text-amber-500' : 'text-gray-500'}`}>🌴 Kalender / Urlaub</button>}
-              {myProfile?.app_rolle !== 'Techniker' && <button onClick={() => navigateTo('bandkasse')} className={`text-2xl font-bold ${currentView === 'bandkasse' ? 'text-amber-500' : 'text-gray-500'}`}>💰 Bandkasse</button>}
-              <button onClick={() => navigateTo('profil')} className={`text-2xl font-bold ${currentView === 'profil' ? 'text-amber-500' : 'text-gray-500'}`}>👤 Mein Profil</button>
-              
-              {myProfile.is_admin && (
-                <button onClick={() => navigateTo('verwaltung')} className={`text-2xl font-bold flex items-center gap-3 ${currentView === 'verwaltung' ? 'text-amber-500' : 'text-gray-500'}`}>
-                  🛡️ Verwaltung
-                  {pendingCount > 0 && <span className="bg-red-500 text-white text-sm px-2.5 py-0.5 rounded-full shadow-lg">{pendingCount} Neu</span>}
-                </button>
-              )}
+            <div className="fixed inset-0 bg-gray-950/98 backdrop-blur-xl z-40 flex flex-col items-center justify-center p-6 overflow-y-auto">
+              <div className="w-full max-w-sm space-y-2">
+                {pushPermission !== 'granted' && (
+                  <button onClick={requestNotificationPermission} className="w-full text-[16px] font-bold text-emerald-400 bg-emerald-500/10 px-5 py-3 rounded-2xl border border-emerald-500/30 animate-pulse active:scale-95 transition-transform mb-4">
+                    🔔 Push-Mitteilungen erlauben
+                  </button>
+                )}
+
+                <button onClick={() => navigateTo('dashboard')} className={`w-full text-left px-4 py-3 rounded-xl text-xl font-bold transition-colors ${currentView === 'dashboard' ? 'bg-gray-800 text-amber-500' : 'text-gray-300 hover:bg-gray-800'}`}>🏠 Startseite</button>
+                
+                {/* Nur für Musiker/Admin/Techniker sichtbar */}
+                {myProfile?.app_rolle !== 'Media' && (
+                  <>
+                    <details className="group bg-gray-900/50 rounded-xl border border-gray-800">
+                      <summary className="px-4 py-3 text-xl font-bold text-gray-300 cursor-pointer list-none flex justify-between items-center hover:bg-gray-800 rounded-xl transition-colors">
+                        📅 Termine & Orga <span className="text-sm group-open:rotate-180 transition-transform">▼</span>
+                      </summary>
+                      <div className="flex flex-col gap-1 p-2 pt-0">
+                        <button onClick={() => navigateTo('termine')} className={`text-left px-4 py-2 rounded-lg text-lg font-bold ${currentView === 'termine' ? 'text-amber-500 bg-gray-800' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}>Terminübersicht</button>
+                        {myProfile?.app_rolle !== 'Techniker' && <button onClick={() => { navigateTo('kalender'); loadAbsenceFormDefaults(); }} className={`text-left px-4 py-2 rounded-lg text-lg font-bold ${currentView === 'kalender' ? 'text-amber-500 bg-gray-800' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}>Kalender / Urlaub</button>}
+                        {(myProfile?.is_admin || myProfile?.can_view_contacts) && <button onClick={() => { navigateTo('kontakte'); fetchCrmData(); }} className={`text-left px-4 py-2 rounded-lg text-lg font-bold ${currentView === 'kontakte' ? 'text-amber-500 bg-gray-800' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}>Kontakte & CRM</button>}
+                      </div>
+                    </details>
+
+                    {myProfile?.app_rolle !== 'Techniker' && (
+                      <details className="group bg-gray-900/50 rounded-xl border border-gray-800">
+                        <summary className="px-4 py-3 text-xl font-bold text-gray-300 cursor-pointer list-none flex justify-between items-center hover:bg-gray-800 rounded-xl transition-colors">
+                          🎵 Musik & Show <span className="text-sm group-open:rotate-180 transition-transform">▼</span>
+                        </summary>
+                        <div className="flex flex-col gap-1 p-2 pt-0">
+                          <button onClick={() => navigateTo('songs')} className={`text-left px-4 py-2 rounded-lg text-lg font-bold ${currentView === 'songs' ? 'text-amber-500 bg-gray-800' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}>Songs</button>
+                          <button onClick={() => navigateTo('setlisten')} className={`text-left px-4 py-2 rounded-lg text-lg font-bold ${currentView === 'setlisten' ? 'text-amber-500 bg-gray-800' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}>Setlisten</button>
+                        </div>
+                      </details>
+                    )}
+
+                    <details className="group bg-gray-900/50 rounded-xl border border-gray-800">
+                      <summary className="px-4 py-3 text-xl font-bold text-gray-300 cursor-pointer list-none flex justify-between items-center hover:bg-gray-800 rounded-xl transition-colors">
+                        📁 Dokumente & Kasse <span className="text-sm group-open:rotate-180 transition-transform">▼</span>
+                      </summary>
+                      <div className="flex flex-col gap-1 p-2 pt-0">
+                        <button onClick={() => navigateTo('dateien')} className={`text-left px-4 py-2 rounded-lg text-lg font-bold ${currentView === 'dateien' ? 'text-amber-500 bg-gray-800' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}>Dateien</button>
+                        {myProfile?.app_rolle !== 'Techniker' && <button onClick={() => navigateTo('bandkasse')} className={`text-left px-4 py-2 rounded-lg text-lg font-bold ${currentView === 'bandkasse' ? 'text-amber-500 bg-gray-800' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}>Bandkasse</button>}
+                      </div>
+                    </details>
+                  </>
+                )}
+
+                {/* Neu: Fotofreigaben (Sichtbar für alle, Media sieht NUR das) */}
+                <button onClick={() => navigateTo('fotos')} className={`w-full text-left px-4 py-3 rounded-xl text-xl font-bold transition-colors ${currentView === 'fotos' ? 'bg-gray-800 text-amber-500' : 'text-gray-300 hover:bg-gray-800'}`}>📸 Fotos & Social Media</button>
+
+                {/* Immer sichtbar */}
+                <button onClick={() => navigateTo('profil')} className={`w-full text-left px-4 py-3 rounded-xl text-xl font-bold transition-colors ${currentView === 'profil' ? 'bg-gray-800 text-amber-500' : 'text-gray-300 hover:bg-gray-800'}`}>👤 Mein Profil</button>
+                
+                {myProfile.is_admin && (
+                  <button onClick={() => navigateTo('verwaltung')} className={`w-full text-left px-4 py-3 rounded-xl text-xl font-bold transition-colors flex justify-between items-center ${currentView === 'verwaltung' ? 'bg-gray-800 text-amber-500' : 'text-gray-300 hover:bg-gray-800'}`}>
+                    <span>🛡️ Verwaltung</span>
+                    {pendingCount > 0 && <span className="bg-red-500 text-white text-sm px-2.5 py-0.5 rounded-full shadow-lg">{pendingCount} Neu</span>}
+                  </button>
+                )}
+              </div>
             </div>
           )}
 
@@ -2768,7 +2862,151 @@ export default function App() {
               
             </div>
           )}
+{/* VIEW: FOTOS & SOCIAL MEDIA */}
+{currentView === 'fotos' && !planningSetlistEvent && !planningSetlistTemplate && (() => {
+            const isMediaOrAdmin = myProfile?.app_rolle === 'Media' || myProfile?.is_admin;
+            
+            return (
+              <div className="space-y-6">
+                <div className="flex justify-between items-center flex-wrap gap-3">
+                  <div>
+                    <h2 className="text-xl font-black text-white">📸 Social Media Freigaben</h2>
+                    <p className="text-sm text-gray-400">{isMediaOrAdmin ? 'Shooting-Alben verwalten & Leute markieren.' : 'Gib Bilder frei, auf denen du zu sehen bist.'}</p>
+                  </div>
+                  {isMediaOrAdmin && (
+                    <button onClick={handleCreateFotoAlbum} className="bg-pink-600 hover:bg-pink-700 text-white text-sm font-bold px-4 py-2 rounded-xl shadow-lg transition-colors">
+                      + Neues Album anlegen
+                    </button>
+                  )}
+                </div>
 
+                {fotoAlben.length === 0 ? (
+                  <div className="bg-gray-900/60 border border-gray-800 p-8 rounded-2xl text-center">
+                    <p className="text-gray-400">Es wurden noch keine Foto-Termine/Alben angelegt.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {fotoAlben.map(album => {
+                      const albumFotos = bandFotos.filter(f => f.album_id === album.id);
+                      
+                      // Filtere die Fotos: Admins/Media sehen alle im Album, Musiker nur die, wo sie getaggt sind
+                      const visibleFotos = isMediaOrAdmin 
+                        ? albumFotos 
+                        : albumFotos.filter(f => fotoTags.some(t => t.foto_id === f.id && t.user_id === session.user.id));
+                      
+                      // Wenn ein normaler Musiker im Album 0 getaggte Fotos hat, zeige das Album gar nicht erst an
+                      if (!isMediaOrAdmin && visibleFotos.length === 0) return null;
+
+                      const isExpanded = expandedAlbumId === album.id;
+
+                      return (
+                        <div key={album.id} className="bg-gray-900/60 border border-gray-800 rounded-2xl overflow-hidden shadow-sm">
+                          <div onClick={() => setExpandedAlbumId(isExpanded ? null : album.id)} className="p-4 flex justify-between items-center cursor-pointer hover:bg-gray-800/50 transition-colors">
+                            <div>
+                              <h3 className="text-[16px] font-bold text-gray-100">{album.title}</h3>
+                              <p className="text-[12px] text-pink-400 font-bold tracking-wider mt-0.5 uppercase">📅 {new Date(album.event_date).toLocaleDateString('de-DE')}</p>
+                            </div>
+                            <div className="flex items-center gap-4">
+                              <span className="text-sm font-bold text-gray-400 bg-gray-950 px-3 py-1 rounded-lg border border-gray-800">{visibleFotos.length} Fotos</span>
+                              <span className="text-gray-500 font-bold">{isExpanded ? '▼' : '▶'}</span>
+                            </div>
+                          </div>
+
+                          {isExpanded && (
+                            <div className="p-4 border-t border-gray-800 bg-gray-950/30">
+                              {isMediaOrAdmin && (
+                                <div className="mb-4">
+                                  <label className="bg-gray-800 hover:bg-gray-700 text-gray-300 px-4 py-2 rounded-xl text-sm font-bold cursor-pointer transition-colors border border-gray-700 inline-block">
+                                    📸 + Foto hier hochladen
+                                    <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFotoUploadForAlbum(e, album.id)} />
+                                  </label>
+                                </div>
+                              )}
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                {visibleFotos.map(foto => {
+                                  const tagsOnFoto = fotoTags.filter(t => t.foto_id === foto.id);
+                                  const myTag = tagsOnFoto.find(t => t.user_id === session.user.id);
+
+                                  return (
+                                    <div key={foto.id} className="bg-gray-950 border border-gray-800 rounded-xl overflow-hidden shadow flex flex-col">
+                                      <a href={foto.file_url} target="_blank" rel="noopener noreferrer" className="block h-40 bg-black relative group">
+                                        <img src={foto.file_url} alt="Band Foto" className="w-full h-full object-cover" />
+                                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white font-bold backdrop-blur-sm">
+                                          🔍 Vollbild
+                                        </div>
+                                      </a>
+                                      
+                                      <div className="p-3 flex flex-col flex-1">
+                                        
+                                        {/* Status für Musiker */}
+                                        {!isMediaOrAdmin && myTag && (
+                                          <div className="mb-3 space-y-2">
+                                            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest text-center mb-1">Deine Freigabe:</p>
+                                            <div className="flex gap-2">
+                                              <button onClick={() => handleSetTagStatus(myTag.id, 'freigegeben')} className={`flex-1 py-1.5 rounded-lg text-sm font-bold transition-colors ${myTag.status === 'freigegeben' ? 'bg-emerald-500 text-gray-950' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20'}`}>👍 Ja</button>
+                                              <button onClick={() => handleSetTagStatus(myTag.id, 'abgelehnt')} className={`flex-1 py-1.5 rounded-lg text-sm font-bold transition-colors ${myTag.status === 'abgelehnt' ? 'bg-red-500 text-gray-950' : 'bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20'}`}>👎 Nein</button>
+                                            </div>
+                                          </div>
+                                        )}
+
+                                        {/* Ansicht für Media/Admin */}
+                                        {isMediaOrAdmin && (
+                                          <div className="flex-1 flex flex-col">
+                                            <div className="flex-1">
+                                              <h4 className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-1.5 border-b border-gray-800 pb-1">Markierte Personen</h4>
+                                              {tagsOnFoto.length === 0 ? (
+                                                <p className="text-[12px] text-gray-600 italic">Niemand markiert.</p>
+                                              ) : (
+                                                <div className="space-y-1 mb-3">
+                                                  {tagsOnFoto.map(t => {
+                                                    const u = allProfiles.find(p => p.id === t.user_id);
+                                                    return (
+                                                      <div key={t.id} className="flex items-center justify-between bg-gray-900 px-2 py-1 rounded text-[12px]">
+                                                        <span className="text-gray-300 font-bold">{u ? getDisplayName(u.full_name) : 'User'}</span>
+                                                        <span>
+                                                          {t.status === 'freigegeben' && <span className="text-emerald-400 font-bold">🟢 OK</span>}
+                                                          {t.status === 'abgelehnt' && <span className="text-red-400 font-bold">🔴 Nein</span>}
+                                                          {t.status === 'offen' && <span className="text-amber-400 font-bold">🟡 Wartet</span>}
+                                                        </span>
+                                                      </div>
+                                                    );
+                                                  })}
+                                                </div>
+                                              )}
+                                            </div>
+                                            
+                                            <select onChange={(e) => { handleTagUser(foto.id, e.target.value); e.target.value = ''; }} defaultValue="" className="w-full bg-gray-900 border border-gray-700 text-gray-300 text-[12px] font-bold rounded-lg px-2 py-1.5 focus:outline-none mb-2">
+                                              <option value="" disabled>+ Person markieren...</option>
+                                              {allProfiles.filter(p => !tagsOnFoto.some(t => t.user_id === p.id)).map(p => (
+                                                <option key={p.id} value={p.id}>{p.full_name}</option>
+                                              ))}
+                                            </select>
+
+                                            <button onClick={() => handleDeleteFoto(foto.id, foto.file_name)} className="w-full bg-red-500/10 text-red-400 border border-red-500/20 py-1.5 rounded-lg text-[12px] font-bold hover:bg-red-500/20 transition-colors">
+                                              🗑️ Foto löschen
+                                            </button>
+                                          </div>
+                                        )}
+
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                                {visibleFotos.length === 0 && isMediaOrAdmin && (
+                                  <p className="text-sm text-gray-500 italic">In diesem Album sind noch keine Fotos.</p>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
           {/* VIEW: KALENDER */}
           {currentView === 'kalender' && !planningSetlistEvent && !planningSetlistTemplate && (
             <div className="space-y-6">
@@ -2939,17 +3177,18 @@ export default function App() {
                             </select>
                           </td>
                           <td className="py-4">
-                            <select
+                          <select
                               value={p.app_rolle || 'Musiker'}
                               onChange={async (e) => {
                                 await supabase.from('profiles').update({ app_rolle: e.target.value, is_admin: e.target.value === 'Admin' }).eq('id', p.id);
                                 fetchAllProfiles();
                               }}
-                              className={`text-[12px] font-bold px-2 py-1 rounded-md border focus:outline-none cursor-pointer ${p.app_rolle === 'Admin' ? 'bg-purple-500/10 text-purple-400 border-purple-500/30' : p.app_rolle === 'Techniker' ? 'bg-blue-500/10 text-blue-400 border-blue-500/30' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'}`}
+                              className={`text-[12px] font-bold px-2 py-1 rounded-md border focus:outline-none cursor-pointer ${p.app_rolle === 'Admin' ? 'bg-purple-500/10 text-purple-400 border-purple-500/30' : p.app_rolle === 'Techniker' ? 'bg-blue-500/10 text-blue-400 border-blue-500/30' : p.app_rolle === 'Media' ? 'bg-pink-500/10 text-pink-400 border-pink-500/30' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'}`}
                             >
                               <option value="Admin">👑 Admin</option>
                               <option value="Musiker">🎸 Musiker</option>
                               <option value="Techniker">🎛️ Techniker</option>
+                              <option value="Media">📸 Social Media</option>
                             </select>
                             <label className="flex items-center gap-2 mt-2 text-[12px] text-gray-300 cursor-pointer">
                               <input 
