@@ -3015,8 +3015,8 @@ export default function App() {
                                       
                                       <div className="p-3 flex flex-col flex-1">
                                         
-                                        {/* Status für Musiker */}
-                                        {!isMediaOrAdmin && myTag && (
+                                        {/* Status für Musiker & Admins */}
+                                        {myProfile?.app_rolle !== 'Media' && myTag && (
                                           <div className="mb-3 space-y-2">
                                             <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest text-center mb-1">Social Media Freigabe:</p>
                                             <div className="flex gap-2">
