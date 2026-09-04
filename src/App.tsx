@@ -711,7 +711,15 @@ export default function App() {
   const handleCreateFotoAlbum = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newAlbumTitle.trim() || !newAlbumDate) return;
-    await supabase.from('foto_alben').insert([{ title: newAlbumTitle, event_date: newAlbumDate }]);
+    
+    // Wir fangen eventuelle Datenbank-Fehler jetzt direkt ab:
+    const { error } = await supabase.from('foto_alben').insert([{ title: newAlbumTitle, event_date: newAlbumDate }]);
+    
+    if (error) {
+      alert('Datenbank-Fehler beim Anlegen: ' + error.message);
+      return;
+    }
+    
     setIsAddingFotoAlbum(false);
     setNewAlbumTitle('');
     setNewAlbumDate(getTodayString());
@@ -1627,6 +1635,7 @@ export default function App() {
   const myOwnAbsences = absences.filter(a => a.user_id === session?.user?.id);
   const pendingRequests = allProfiles.filter(p => !p.is_approved && !p.is_admin);
   const pendingCount = pendingRequests.length;
+  const pendingFotosCount = fotoTags.filter(t => t.user_id === session?.user?.id && t.status === 'offen').length;
 
   const uniqueTitles = Array.from(new Set(events.map(e => e.title).filter(Boolean)));
   const uniqueLocations = Array.from(new Set(events.map(e => e.location).filter(Boolean)));
@@ -1706,8 +1715,10 @@ export default function App() {
                   <span className={`h-0.5 w-4 bg-gray-200 rounded transition-opacity duration-300 ${isMenuOpen ? 'opacity-0' : ''}`}></span>
                   <span className={`h-0.5 w-4 bg-gray-200 rounded transition-transform duration-300 ${isMenuOpen ? '-rotate-45 -translate-y-1' : ''}`}></span>
                   
-                  {myProfile.is_admin && pendingCount > 0 && (
-                    <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-bold h-5 w-5 rounded-full flex items-center justify-center shadow-[0_0_10px_rgba(239,68,68,0.6)] animate-pulse">{pendingCount}</span>
+                  {((myProfile.is_admin && pendingCount > 0) || pendingFotosCount > 0) && (
+                    <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-bold h-5 w-5 rounded-full flex items-center justify-center shadow-[0_0_10px_rgba(239,68,68,0.6)] animate-pulse">
+                      {(myProfile.is_admin ? pendingCount : 0) + pendingFotosCount}
+                    </span>
                   )}
                 </button>
               )}
@@ -1763,8 +1774,11 @@ export default function App() {
                   </>
                 )}
 
-                {/* Neu: Fotofreigaben (Sichtbar für alle, Media sieht NUR das) */}
-                <button onClick={() => navigateTo('fotos')} className={`w-full text-left px-4 py-3 rounded-xl text-xl font-bold transition-colors ${currentView === 'fotos' ? 'bg-gray-800 text-amber-500' : 'text-gray-300 hover:bg-gray-800'}`}>📸 Fotos & Social Media</button>
+                {/* Neues Foto-Feature (sichtbar für alle) */}
+                <button onClick={() => navigateTo('fotos')} className={`w-full text-left px-4 py-3 rounded-xl text-xl font-bold transition-colors flex justify-between items-center ${currentView === 'fotos' ? 'bg-gray-800 text-amber-500' : 'text-gray-300 hover:bg-gray-800'}`}>
+                  <span>📸 Fotos & Social Media</span>
+                  {pendingFotosCount > 0 && <span className="bg-red-500 text-white text-sm px-2.5 py-0.5 rounded-full shadow-lg animate-pulse">{pendingFotosCount} Neu</span>}
+                </button>
 
                 {/* Immer sichtbar */}
                 <button onClick={() => navigateTo('profil')} className={`w-full text-left px-4 py-3 rounded-xl text-xl font-bold transition-colors ${currentView === 'profil' ? 'bg-gray-800 text-amber-500' : 'text-gray-300 hover:bg-gray-800'}`}>👤 Mein Profil</button>
@@ -2698,6 +2712,7 @@ export default function App() {
                           
                           // Jonas wird bei Proben komplett ignoriert
                           const relevantProfiles = allProfiles.filter(p => {
+                            if (p.app_rolle === 'Media') return false;
                             if (ev.event_type === 'Probe' && p.full_name?.toLowerCase().includes('jonas')) return false;
                             return true;
                           });
@@ -2776,20 +2791,26 @@ export default function App() {
                                   </div>
                                 </div>
 
-                                <div className="flex flex-col gap-1.5 bg-gray-950/60 border border-gray-800/80 p-1.5 rounded-xl min-w-[90px]">
-                                  <button onClick={() => handleVote(ev.id, 'ja')} className={`px-2.5 py-1 rounded-lg text-[12px] font-bold transition-all ${myVote === 'ja' ? 'bg-emerald-500/25 text-emerald-400 border border-emerald-500/40' : 'bg-transparent text-emerald-400/70 hover:bg-emerald-500/10'}`}>👍 Zusage</button>
-                                  <button onClick={() => handleVote(ev.id, 'nein')} className={`px-2.5 py-1 rounded-lg text-[12px] font-bold transition-all ${myVote === 'nein' ? 'bg-red-500/25 text-red-400 border border-red-500/40' : 'bg-transparent text-red-400/70 hover:bg-red-500/10'}`}>👎 Absage</button>
-                                </div>
+                                {myProfile?.app_rolle !== 'Media' && (
+                                  <div className="flex flex-col gap-1.5 bg-gray-950/60 border border-gray-800/80 p-1.5 rounded-xl min-w-[90px]">
+                                    <button onClick={() => handleVote(ev.id, 'ja')} className={`px-2.5 py-1 rounded-lg text-[12px] font-bold transition-all ${myVote === 'ja' ? 'bg-emerald-500/25 text-emerald-400 border border-emerald-500/40' : 'bg-transparent text-emerald-400/70 hover:bg-emerald-500/10'}`}>👍 Zusage</button>
+                                    <button onClick={() => handleVote(ev.id, 'nein')} className={`px-2.5 py-1 rounded-lg text-[12px] font-bold transition-all ${myVote === 'nein' ? 'bg-red-500/25 text-red-400 border border-red-500/40' : 'bg-transparent text-red-400/70 hover:bg-red-500/10'}`}>👎 Absage</button>
+                                  </div>
+                                )}
                               </div>
 
                               <div className="mt-4 pt-3 border-t border-gray-800/60 flex items-center justify-between flex-wrap gap-2 text-[12px] relative z-10">
                                 <div className="flex items-center gap-3">
-                                  <span className="inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-full font-semibold">🟢 {goingUsers.length}</span>
-                                  <span className="inline-flex items-center gap-1 bg-red-500/10 text-red-400 px-2 py-0.5 rounded-full font-semibold">🔴 {decliningUsers.length}</span>
-                                  <span className="inline-flex items-center gap-1 bg-amber-500/10 text-amber-400 px-2 py-0.5 rounded-full font-semibold">🟡 {pendingUsers.length} offen</span>
+                                  {myProfile?.app_rolle !== 'Media' && (
+                                    <>
+                                      <span className="inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-full font-semibold">🟢 {goingUsers.length}</span>
+                                      <span className="inline-flex items-center gap-1 bg-red-500/10 text-red-400 px-2 py-0.5 rounded-full font-semibold">🔴 {decliningUsers.length}</span>
+                                      <span className="inline-flex items-center gap-1 bg-amber-500/10 text-amber-400 px-2 py-0.5 rounded-full font-semibold">🟡 {pendingUsers.length} offen</span>
+                                    </>
+                                  )}
                                 </div>
                                 <button onClick={() => setExpandedEventId(isExpanded ? null : ev.id)} className="text-sm font-bold text-amber-500/90 hover:text-amber-400 flex items-center gap-1 transition-colors">
-                                  {isExpanded ? 'Details verbergen 🔼' : 'Details & wer kommt? 🔽'}
+                                  {isExpanded ? 'Details verbergen 🔼' : 'Details & Infos 🔽'}
                                 </button>
                               </div>
 
@@ -2800,7 +2821,7 @@ export default function App() {
                                     <div className="bg-purple-950/20 border border-purple-900/30 p-3 rounded-xl mb-3 space-y-2">
                                       <h4 className="font-bold text-purple-400 uppercase tracking-wider text-[12px] mb-1 flex justify-between items-center">
                                         <span>🎤 Auftritts-Details</span>
-                                        {myProfile?.app_rolle !== 'Techniker' && ev.gage && (
+                                        {myProfile?.app_rolle !== 'Techniker' && myProfile?.app_rolle !== 'Media' && ev.gage && (
                                           <span className="text-emerald-400 font-mono text-sm bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
                                             Gage: {ev.gage} €
                                           </span>
@@ -2837,35 +2858,37 @@ export default function App() {
                                     </div>
                                   )}
 
-                                  {ev.description && (
+{ev.description && myProfile?.app_rolle !== 'Media' && (
                                     <div>
                                       <h4 className="font-bold text-gray-400 uppercase tracking-wider text-[12px] mb-1">ℹ️ Notizen & Infos:</h4>
                                       <p className="text-gray-300 bg-gray-900/40 p-3 rounded-lg border border-gray-800 italic whitespace-pre-wrap">{ev.description}</p>
                                     </div>
                                   )}
 
-                                  <div>
-                                    <h4 className="font-bold text-gray-400 uppercase tracking-wider text-[12px] mb-2">📋 Anmeldestatus:</h4>
-                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                                      <div className="bg-emerald-950/20 border border-emerald-900/30 p-2 rounded-lg space-y-1">
-                                        <span className="font-bold text-emerald-400 block border-b border-emerald-900/40 pb-1 mb-1">Dabei ({goingUsers.length})</span>
-                                        {goingUsers.length === 0 ? <span className="text-gray-600 italic block">Niemand</span> : goingUsers.map(u => <span key={u.id} className="flex items-center gap-1 text-emerald-300/90 font-medium py-0.5">✓ {getDisplayName(u.full_name)}</span>)}
-                                      </div>
-                                      <div className="bg-red-950/20 border border-red-900/30 p-2 rounded-lg space-y-1">
-                                        <span className="font-bold text-red-400 block border-b border-red-900/40 pb-1 mb-1">Abgesagt ({decliningUsers.length})</span>
-                                        {decliningUsers.length === 0 ? <span className="text-gray-600 italic block">Niemand</span> : decliningUsers.map(u => <span key={u.id} className="flex items-center gap-1 text-red-300/90 font-medium py-0.5">✕ {getDisplayName(u.full_name)}</span>)}
-                                      </div>
-                                      <div className="bg-amber-950/20 border border-amber-900/30 p-2 rounded-lg space-y-1">
-                                        <div className="flex justify-between items-center border-b border-amber-900/40 pb-1 mb-1">
-                                          <span className="font-bold text-amber-400">Offen ({pendingUsers.length})</span>
-                                          {(myProfile.is_admin || myProfile.can_manage_events) && pendingUsers.length > 0 && (
-                                            <button onClick={() => pokePendingUsers(ev.id, pendingUsers.length)} className="text-[10px] bg-amber-500 text-gray-950 px-2 py-0.5 rounded font-bold hover:bg-amber-400 transition-colors">🔔 Anstupsen</button>
-                                          )}
+{myProfile?.app_rolle !== 'Media' && (
+                                    <div>
+                                      <h4 className="font-bold text-gray-400 uppercase tracking-wider text-[12px] mb-2">📋 Anmeldestatus:</h4>
+                                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                        <div className="bg-emerald-950/20 border border-emerald-900/30 p-2 rounded-lg space-y-1">
+                                          <span className="font-bold text-emerald-400 block border-b border-emerald-900/40 pb-1 mb-1">Dabei ({goingUsers.length})</span>
+                                          {goingUsers.length === 0 ? <span className="text-gray-600 italic block">Niemand</span> : goingUsers.map(u => <span key={u.id} className="flex items-center gap-1 text-emerald-300/90 font-medium py-0.5">✓ {getDisplayName(u.full_name)}</span>)}
                                         </div>
-                                        {pendingUsers.length === 0 ? <span className="text-gray-600 italic block">Alle abgestimmt</span> : pendingUsers.map(u => <span key={u.id} className="flex items-center gap-1 text-amber-300/80 py-0.5">❓ {getDisplayName(u.full_name)}</span>)}
+                                        <div className="bg-red-950/20 border border-red-900/30 p-2 rounded-lg space-y-1">
+                                          <span className="font-bold text-red-400 block border-b border-red-900/40 pb-1 mb-1">Abgesagt ({decliningUsers.length})</span>
+                                          {decliningUsers.length === 0 ? <span className="text-gray-600 italic block">Niemand</span> : decliningUsers.map(u => <span key={u.id} className="flex items-center gap-1 text-red-300/90 font-medium py-0.5">✕ {getDisplayName(u.full_name)}</span>)}
+                                        </div>
+                                        <div className="bg-amber-950/20 border border-amber-900/30 p-2 rounded-lg space-y-1">
+                                          <div className="flex justify-between items-center border-b border-amber-900/40 pb-1 mb-1">
+                                            <span className="font-bold text-amber-400">Offen ({pendingUsers.length})</span>
+                                            {(myProfile.is_admin || myProfile.can_manage_events) && pendingUsers.length > 0 && (
+                                              <button onClick={() => pokePendingUsers(ev.id, pendingUsers.length)} className="text-[10px] bg-amber-500 text-gray-950 px-2 py-0.5 rounded font-bold hover:bg-amber-400 transition-colors">🔔 Anstupsen</button>
+                                            )}
+                                          </div>
+                                          {pendingUsers.length === 0 ? <span className="text-gray-600 italic block">Alle abgestimmt</span> : pendingUsers.map(u => <span key={u.id} className="flex items-center gap-1 text-amber-300/80 py-0.5">❓ {getDisplayName(u.full_name)}</span>)}
+                                        </div>
                                       </div>
                                     </div>
-                                  </div>
+                                  )}
                                 </div>
                               )}
                             </div>
@@ -2986,10 +3009,10 @@ export default function App() {
                                         {/* Status für Musiker */}
                                         {!isMediaOrAdmin && myTag && (
                                           <div className="mb-3 space-y-2">
-                                            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest text-center mb-1">Deine Freigabe:</p>
+                                            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest text-center mb-1">Social Media Freigabe:</p>
                                             <div className="flex gap-2">
-                                              <button onClick={() => handleSetTagStatus(myTag.id, 'freigegeben')} className={`flex-1 py-1.5 rounded-lg text-sm font-bold transition-colors ${myTag.status === 'freigegeben' ? 'bg-emerald-500 text-gray-950' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20'}`}>👍 Ja</button>
-                                              <button onClick={() => handleSetTagStatus(myTag.id, 'abgelehnt')} className={`flex-1 py-1.5 rounded-lg text-sm font-bold transition-colors ${myTag.status === 'abgelehnt' ? 'bg-red-500 text-gray-950' : 'bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20'}`}>👎 Nein</button>
+                                              <button onClick={() => handleSetTagStatus(myTag.id, 'freigegeben')} className={`flex-1 py-1.5 rounded-lg text-sm font-bold transition-colors ${myTag.status === 'freigegeben' ? 'bg-emerald-500 text-gray-950 shadow-md shadow-emerald-500/20' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20'}`}>✅ Approve</button>
+                                              <button onClick={() => handleSetTagStatus(myTag.id, 'abgelehnt')} className={`flex-1 py-1.5 rounded-lg text-sm font-bold transition-colors ${myTag.status === 'abgelehnt' ? 'bg-red-500 text-gray-950 shadow-md shadow-red-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20'}`}>🚫 No approve</button>
                                             </div>
                                           </div>
                                         )}
