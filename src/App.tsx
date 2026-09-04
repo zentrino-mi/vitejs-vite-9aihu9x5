@@ -742,13 +742,22 @@ export default function App() {
     if (!userId) return;
     const existing = fotoTags.find(t => t.foto_id === fotoId && t.user_id === userId);
     if (existing) return alert('Person ist schon auf dem Bild markiert!');
-    await supabase.from('foto_tags').insert([{ foto_id: fotoId, user_id: userId, status: 'offen' }]);
-    fetchFotoData();
+    
+    const { error } = await supabase.from('foto_tags').insert([{ foto_id: fotoId, user_id: userId, status: 'offen' }]);
+    if (error) {
+      alert('Fehler beim Markieren: ' + error.message);
+    } else {
+      fetchFotoData();
+    }
   };
 
   const handleSetTagStatus = async (tagId: string, status: 'freigegeben' | 'abgelehnt') => {
-    await supabase.from('foto_tags').update({ status }).eq('id', tagId);
-    fetchFotoData();
+    const { error } = await supabase.from('foto_tags').update({ status }).eq('id', tagId);
+    if (error) {
+      alert('Datenbank-Fehler beim Bestätigen: ' + error.message);
+    } else {
+      fetchFotoData();
+    }
   };
 
   const handleDeleteFoto = async (fotoId: string, fileName: string) => {
